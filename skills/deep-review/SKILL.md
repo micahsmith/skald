@@ -1,6 +1,6 @@
 ---
 name: deep-review
-description: Runs a deep review on a branch with four focuses (security and privacy, performance, correctness, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
+description: Runs a deep review on a branch with five focuses (security and privacy, performance, correctness of logic, correctness of integration, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
 argument-hint: "[target] [base] — default behavior compares `HEAD` against `main`/`master`"
 disable-model-invocation: true
 ---
@@ -9,9 +9,9 @@ Review the changes on a branch against a base branch, then write one consolidate
 review is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot
 interfere with other work in progress.
 
-Four reviewers do the review, and each has one focus: security and privacy, performance,
-correctness, or style. Each reviewer explores the changes freely and writes a report. The four
-reports are then combined into one final report.
+Five reviewers do the review, and each has one focus: security and privacy, performance,
+correctness of logic, correctness of integration, or style. Each reviewer explores the changes
+freely and writes a report. The five reports are then combined into one final report.
 
 ## Arguments
 
@@ -53,13 +53,14 @@ If the script fails, report the cause to the user.
 
 ### 2. First Pass Summary
 
-Spawn one inexpensive agent to read the diffstat and changed-file list. The agent MUST write a 3-6
-sentence plain language summary of the changes. Pass this summary to all reviewers as shared initial
-context. The summary also opens the final report (see "Report Structure").
+Spawn one agent to read the diffstat and changed-file list. This agent SHOULD run on a small model
+(such as Haiku) when the harness can choose one. The agent MUST write a 3-6 sentence plain language
+summary of the changes. Pass this summary to all reviewers as shared initial context. The summary
+also opens the final report (see "Report Structure").
 
 ### 3. Parallel Fan-Out
 
-Call the four reviewers to run in parallel (the same message passed to four `Agent` calls). Do NOT
+Call the five reviewers to run in parallel (the same message passed to five `Agent` calls). Do NOT
 paste the diff into their prompts. Provide each reviewer with the same context and with its
 individual focus:
 
@@ -67,11 +68,15 @@ individual focus:
 - The first pass summary from step 2.
 - Instructions on issue report format and individual focus.
 
-Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report.
-Always launch all four reviewers regardless of how small the diff is. A reviewer MAY report "No
-issues found".
+Pass each focus exactly as written below. You MUST NOT add example issues, suspected problems, or
+areas to check. A reviewer given examples searches for those examples and finds little else.
 
-The four focuses:
+Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report.
+Test files are in scope for every focus. A reviewer MUST NOT leave test files out of the diff it
+reads. Always launch all five reviewers regardless of how small the diff is. A reviewer MAY report
+"No issues found".
+
+The five focuses:
 
 - **Security and Privacy**
   - Leaked secrets
@@ -83,13 +88,35 @@ The four focuses:
   - Needless work or complexity
   - N+1 queries
   - Wasteful memory allocations or I/O ops
-- **Correctness**
+- **Correctness: Logic**
   - Errors in logic
   - Broken edge cases
   - Race conditions
   - Incorrect or incomplete error handling
+  - Tests that pass for the wrong reason, or that leak state into later tests
+
+  The logic reviewer MUST search in these passes, in order:
+
+  1. **Line by line.** Read every changed hunk and the whole function around it. For each line,
+     ask what input, state, or timing makes the line wrong. Bugs in unchanged lines of a changed
+     function are in scope.
+  2. **Removed behavior.** For each deleted or replaced line, name the rule it enforced. Then find
+     where the new code enforces that rule. If no code does, report it.
+  3. **Swallowed errors.** Find each catch, recover, or fallback that the diff adds or touches.
+     Check that it logs or rethrows. Check that it does not also catch cancellation or interrupts.
+  4. **Language traps.** Check the diff for the known traps of its language and framework.
+  5. **Tests.** Check that each test's assertion holds because of the code under test, not because
+     of a mock. Check that each test's teardown undoes its setup.
+  6. **Gaps.** Re-read the diff one last time, looking only for issues not yet listed.
+- **Correctness: Integration**
   - Unintended breaks in backwards compatibility
   - Mismatch with intent
+
+  The integration reviewer MUST search in these passes, in order:
+
+  1. **Callers.** For each changed function, find every caller. Check each caller against the new
+     preconditions, return values, exceptions, and ordering.
+  2. **Gaps.** Re-read the diff one last time, looking only for issues not yet listed.
 - **Style**
   - Non-idiomatic use of language or framework
   - Violation of existing codebase patterns
@@ -97,16 +124,25 @@ The four focuses:
   - Excessive or trivial comments on well-written code
   - Violation of any rules provided in `AGENTS.md`, `CLAUDE.md`, and the like
 
+On top of their passes, both correctness reviewers MUST apply the scenario rule:
+
+1. For each candidate problem, write the concrete scenario. For a logic, edge case, or error
+   handling problem, write the input or state, then the wrong output or crash. For an intent or
+   compatibility problem, write the behavior that a caller or the first pass summary expects, then
+   the behavior the code gives.
+2. Drop any candidate that has no concrete scenario.
+
 Rule for reviewers: report ONLY issues pertinent to your focus. However, if an issue MIGHT pertain
 to your focus, report it even when it also belongs to another focus. Several reviewers MAY report
 the same issue.
 
 ### 4. Consolidated Report
 
-Collate, deduplicate, and organize the four reports. Do NOT overrule a reviewer: every issue
+Collate, deduplicate, and organize the five reports. Do NOT overrule a reviewer: every issue
 a reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into
 a single entry that names every ID which reported it. A merged entry MUST have a single Context
-block. Rewrite that block rather than concatenating versions from each reviewer.
+block and at most one Failure Scenario. Rewrite each rather than concatenating versions from each
+reviewer.
 
 ### 5. Final Report and Summary
 
@@ -151,6 +187,10 @@ does for the work on the branch, and who consumes it. Do NOT describe the proble
 sentences, grounded in code you have read. If the purpose is unclear, state plainly that the purpose
 is unclear.
 
+**Failure Scenario:** (REQUIRED when any ID in the heading is `COR` or `INT`, OPTIONAL otherwise)
+The input, state, or expected behavior, then the wrong output, crash, or actual behavior. One or
+two sentences.
+
 **Issue Statement:** What is the problem and why is it a problem.
 
 **Proposed Solution:** How the problem could be resolved, and why the proposed solution fixes it.
@@ -166,7 +206,8 @@ Use one ID prefix per focus:
 
 - `SEC` for security and privacy
 - `PERF` for performance
-- `COR` for correctness
+- `COR` for correctness: logic
+- `INT` for correctness: integration
 - `STY` for style
 
 Group issues by severity, blocking first. Open each report with a 2-3 sentence summary.

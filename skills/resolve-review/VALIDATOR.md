@@ -26,9 +26,15 @@ steps that did not settle the issue.
 `OPTIONS` holds fixes that exclude each other. The user picks one. Never list steps that must all
 happen as options.
 
+When your `FIX` or `OPTIONS` replaces or extends the proposed solution, you MUST state what became
+of the proposed solution. Either the proposal is one of the options, or you name the reason you
+dropped it. An option that is the proposed solution MUST say so.
+
 ## Method
 
-1. **Read the issue.** Read the entry for your issue in the report. Skip the other entries.
+1. **Read the issue.** Read the entry for your issue in the report. Skip the other entries. The
+   **Failure Scenario** is the claim to disprove. If the issue has no Failure Scenario, the
+   **Issue Statement** is the claim.
 2. **Find the code.** Read the code at the stated location in the working tree. The code may have
    moved since the review, so search by content if the line numbers are off.
 3. **Try to disprove the issue.** Look for:
@@ -61,7 +67,8 @@ If any condition fails, write no test and return the verdict that reading suppor
 Follow these rules for the test:
 
 1. **Predict.** Before the run, decide which result confirms the issue and which result disproves
-   it. A result that matches neither prediction leaves the verdict `unclear`.
+   it. When the issue has a Failure Scenario, the scenario is the prediction that confirms the
+   issue. A result that matches neither prediction leaves the verdict `unclear`.
 2. **Isolate.** Write the test in a new file. Put `rrtmp` and your issue ID in the file name, so
    that the coordinator can find a leftover file. Other validators run at the same time, so run
    ONLY your own file.
