@@ -193,7 +193,7 @@ The batch has three parts. Omit any empty part.
    see that the options exclude each other:
 
    ```markdown
-   **COR-2** Cache never expires. Pick one:
+   **LOG-2** Cache never expires. Pick one:
    - **A.** Expire each entry after a TTL. Simple, but stale entries live until the TTL ends.
    - **B.** Cap the map with an LRU. Bounded memory, but hot entries can be evicted under load.
 
@@ -246,7 +246,7 @@ Add the table as its own section directly after the Summary section of the repor
 | ID | Title | Verdict | Judgment | Risk | Status | Files Touched | Note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SEC-1 | Query built from raw input | confirmed | mechanical | low | fixed | `db/users.js`, `test/users.test.js` | Regression test added. |
-| COR-2, PERF-1 | Cache never expires | confirmed | choice | medium | awaiting-decision | `cache/store.js` | Options: TTL or LRU. |
+| LOG-2, PERF-1 | Cache never expires | confirmed | choice | medium | awaiting-decision | `cache/store.js` | Options: TTL or LRU. |
 | STY-3 | Unused import | — | — | — | open | — | — |
 ```
 

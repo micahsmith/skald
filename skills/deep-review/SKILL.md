@@ -1,6 +1,6 @@
 ---
 name: deep-review
-description: Runs a deep review on a branch with four focuses (security and privacy, performance, correctness, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
+description: Runs a deep review on a branch with five focuses (security and privacy, performance, logic, compatibility, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
 argument-hint: "[target] [base] — default behavior compares `HEAD` against `main`/`master`"
 disable-model-invocation: true
 ---
@@ -9,10 +9,11 @@ Review the changes on a branch against a base branch, then write one consolidate
 review is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot
 interfere with other work in progress.
 
-Five reviewers do the review across four focuses: security and privacy, performance, correctness,
-and style. Two reviewers share the correctness focus. The logic reviewer checks the changed code
-itself, and the compatibility reviewer checks the code that calls it. Each reviewer explores the
-changes freely and writes a report. The five reports are then combined into one final report.
+Five reviewers do the review, and each has one focus: security and privacy, performance, logic,
+compatibility, or style. The logic and compatibility reviewers are the two correctness reviewers.
+The logic reviewer checks the changed code itself, and the compatibility reviewer checks the code
+that calls it. Each reviewer explores the changes freely and writes a report. The five reports are
+then combined into one final report.
 
 ## Arguments
 
@@ -77,7 +78,7 @@ Test files are in scope for every focus. A reviewer MUST NOT leave test files ou
 reads. Always launch all five reviewers regardless of how small the diff is. A reviewer MAY report
 "No issues found".
 
-The five reviewers:
+The five focuses:
 
 - **Security and Privacy**
   - Leaked secrets
@@ -141,13 +142,9 @@ the same issue.
 
 Collate, deduplicate, and organize the five reports. Do NOT overrule a reviewer: every issue
 a reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into
-a single entry that names one ID for each focus that reported it. A merged entry MUST have a
-single Context block and at most one Failure Scenario. Rewrite each rather than concatenating
-versions from each reviewer.
-
-Both correctness reviewers number their issues from `COR-1`, so their IDs collide. After merging,
-renumber every `COR` issue from `COR-1` in the order the issues appear in the final report. An
-issue that both correctness reviewers reported gets one `COR` ID.
+a single entry that names every ID which reported it. A merged entry MUST have a single Context
+block and at most one Failure Scenario. Rewrite each rather than concatenating versions from each
+reviewer.
 
 ### 5. Final Report and Summary
 
@@ -192,7 +189,7 @@ does for the work on the branch, and who consumes it. Do NOT describe the proble
 sentences, grounded in code you have read. If the purpose is unclear, state plainly that the purpose
 is unclear.
 
-**Failure Scenario:** (REQUIRED when any ID in the heading is `COR`, OPTIONAL otherwise)
+**Failure Scenario:** (REQUIRED when any ID in the heading is `LOG` or `COM`, OPTIONAL otherwise)
 The input, state, or expected behavior, then the wrong output, crash, or actual behavior. One or
 two sentences.
 
@@ -211,7 +208,8 @@ Use one ID prefix per focus:
 
 - `SEC` for security and privacy
 - `PERF` for performance
-- `COR` for correctness
+- `LOG` for correctness: logic
+- `COM` for correctness: compatibility
 - `STY` for style
 
 Group issues by severity, blocking first. Open each report with a 2-3 sentence summary.
@@ -225,5 +223,5 @@ The final report MUST use this format:
 2. **Summary.** A table of issue counts per severity per focus followed by the list of blocking
    issues.
 3. **Issues by Severity.** Issues in order: Blocking → Major → Suggestion → Style. Each issue
-   keeps its ID, as renumbered in step 4, and its focus tag. A merged issue MUST list one ID for
-   each focus that reported it and combine their content.
+   keeps its ID and focus tag. A merged issue MUST list the ID from each reviewer and combine
+   their content.
