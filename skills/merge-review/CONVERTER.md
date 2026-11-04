@@ -54,7 +54,7 @@ does for the work on the branch, and who consumes it. Do NOT describe the proble
 sentences, grounded in code you have read. If the purpose is unclear, state plainly that the purpose
 is unclear.
 
-**Failure Scenario:** (REQUIRED when any ID in the heading is `COR` or `INT`, OPTIONAL otherwise)
+**Failure Scenario:** (REQUIRED when any ID in the heading is `COR`, OPTIONAL otherwise)
 The input, state, or expected behavior, then the wrong output, crash, or actual behavior. One or
 two sentences.
 
