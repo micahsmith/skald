@@ -13,8 +13,8 @@ with other guidance, these rules govern.
 ## Scope
 
 Presume that the scope of work to clean up is all uncommitted changes in the working tree. In other
-words, the default scope is `git diff HEAD` and any untracked files. If the user specifies
-a different scope, use the stated scope. For example, the user may request to examine all comments
+words, the default scope is `git diff HEAD` and any untracked files. If the user specifies a
+different scope, use the stated scope. For example, the user may request to examine all comments
 compared to the base branch. Branches, directories, single files, or the whole repository might be
 requested.
 
@@ -47,18 +47,18 @@ instead.
    history: `// now also handles null`, `// updated to the v2 client`, `// as requested`,
    `// removed the old fallback`, and `// to satisfy acceptance criterion AC7`. The commit history
    already holds that content.
-3. **Staleness.** Determine whether the comment describes code or behavior that no longer exists.
-   If the comment is stale, **delete it** OR correct it so the comment is made accurate. A mistaken
-   or false comment is worse than a missing comment.
+3. **Staleness.** Determine whether the comment describes code or behavior that no longer exists. If
+   the comment is stale, **delete it** OR correct it so the comment is made accurate. A mistaken or
+   false comment is worse than a missing comment.
 4. **Protected Comment.** The comment matches a category under the "Protected Comments" section.
    **Keep it.**
 5. **Everything Else.** The comment matches no step above. **Keep it.**
 
 ### Phase 2: Tighten
 
-All comments that are kept MUST be subjected to the deletion test one sentence at a time: delete
-the sentence and name the fact that has been lost with its deletion. If you cannot name a fact that
-is now absent from the file, that sentence MUST be removed from the comment. Keep the sentences that
+All comments that are kept MUST be subjected to the deletion test one sentence at a time: delete the
+sentence and name the fact that has been lost with its deletion. If you cannot name a fact that is
+now absent from the file, that sentence MUST be removed from the comment. Keep the sentences that
 survive the deletion test.
 
 Embedding real information and embedding it efficiently are independent judgments. A comment can
@@ -93,8 +93,8 @@ These read like restatement but aren't. Keep them.
 - **Cross-File Sync Pointers.** For example: `// keep in sync with the router's target groups`. The
   link is the reason: it stops two copies from drifting apart. Deleting it deletes the only warning
   that the next editor gets.
-- **Data-Literal Semantics.** For example: `# pence, not pounds`, `# (width, height), portrait`.
-  A literal cannot state its own units, order, or convention.
+- **Data-Literal Semantics.** For example: `# pence, not pounds`, `# (width, height), portrait`. A
+  literal cannot state its own units, order, or convention.
 - **Format Contracts.** For example: `// thousands separators, matching the dashboard`. These pin
   output to an expectation held outside the file.
 - **Section Banners.** For example: `# --- Parsing ---`. These are navigation, not narration. Treat
@@ -103,8 +103,8 @@ These read like restatement but aren't. Keep them.
 
 ## When Uncertain
 
-When uncertain about a reason, a constraint, or a warning, keep it. When uncertain about
-a restatement, delete it.
+When uncertain about a reason, a constraint, or a warning, keep it. When uncertain about a
+restatement, delete it.
 
 Wrongly deleting a warning that does real work costs more than leaving a mediocre comment behind.
 

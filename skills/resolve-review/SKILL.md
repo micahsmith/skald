@@ -113,8 +113,8 @@ Then spawn one validator per `open` issue. Give each validator:
 - The issue list from step 1, so that the validator can name issues that share a root cause.
 - The test commands. If test runs cannot happen at once, tell the validator to run no tests.
 
-Record each verdict, judgment, risk, and footprint in the triage table as the validator returns.
-The footprint is the list of files the fix touches. Then add a validation block to the issue (see
+Record each verdict, judgment, risk, and footprint in the triage table as the validator returns. The
+footprint is the list of files the fix touches. Then add a validation block to the issue (see
 "Tracking"). The validation block is the only place in the report that holds the validator's
 evidence.
 
@@ -162,13 +162,13 @@ Set each issue to `in-progress` before its fixer starts. Each fixer SHOULD run o
 
 - The absolute path to [FIXER.md](FIXER.md), which the fixer MUST read first.
 - The report path and the IDs in its unit.
-- The fix to apply to each issue: the proposed solution, the validator's fix, or the option the
-  user chose.
+- The fix to apply to each issue: the proposed solution, the validator's fix, or the option the user
+  chose.
 - The footprint of the unit, plus the "partial fix may exist" note if the row has one.
 - The test commands. If test runs cannot happen at once, tell the fixer to run no tests.
 
-Update the triage table as each fixer returns, and add a resolution block to each issue that
-becomes `fixed` or `blocked` (see "Tracking"). Handle a `blocked` return by its cause:
+Update the triage table as each fixer returns, and add a resolution block to each issue that becomes
+`fixed` or `blocked` (see "Tracking"). Handle a `blocked` return by its cause:
 
 - **The fix needs a file outside the footprint.** Add the file to the footprint. Set the issue to
   `queued` for a later wave. The next fixer is a fresh attempt, not a retry, so it runs on the
@@ -189,8 +189,8 @@ The batch has three parts. Omit any empty part.
 
 1. **Approvals.** Every `mechanical` issue with `high` risk. State the fix and the risk for each.
    The user MAY approve them all with one reply.
-2. **Choices.** Every `choice` issue. Present each choice in this shape, so that the user can
-   see that the options exclude each other:
+2. **Choices.** Every `choice` issue. Present each choice in this shape, so that the user can see
+   that the options exclude each other:
 
    ```markdown
    **LOG-2** Cache never expires. Pick one:
@@ -200,13 +200,13 @@ The batch has three parts. Omit any empty part.
    Recommend A, because every caller already passes a timestamp.
    ```
 
-   Letter ONLY options that exclude each other. Never letter steps that must all happen. Each
-   option states the fix and its trade-off.
+   Letter ONLY options that exclude each other. Never letter steps that must all happen. Each option
+   states the fix and its trade-off.
 3. **Not Fixed.** Every `rejected`, `unclear`, and `blocked` issue, each with its reason. The user
    MAY override any of them.
 
-Apply the answers. An approved or decided issue becomes `queued`, with the decision in its note.
-A declined issue becomes `skipped`. Fix the new `queued` issues in further waves.
+Apply the answers. An approved or decided issue becomes `queued`, with the decision in its note. A
+declined issue becomes `skipped`. Fix the new `queued` issues in further waves.
 
 Discuss the `design` issues last, one at a time. Each discussion ends with a decision (`queued`) or
 with `skipped`.
@@ -298,8 +298,8 @@ state what became of the proposed solution. Either the proposal is one of the op
 sub-bullet names the reason it was dropped. You MUST NOT edit or remove the **Proposed Solution**
 field itself.
 
-Cut the validator's narrative. Keep the names of the files, lines, and tests that the summary
-cites, so that a reader can check the verdict.
+Cut the validator's narrative. Keep the names of the files, lines, and tests that the summary cites,
+so that a reader can check the verdict.
 
 ### Resolution Block
 

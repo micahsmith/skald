@@ -14,8 +14,7 @@ new issues. You edit the report.
 - `report-path`: the report to edit. If the argument is missing, look for the newest `review-*.md`
   file. Search in this order:
   1. A directory conventionally used for reviews (`reviews/` or similar).
-  2. An existing scratch directory at the repository root (`tmp/`, `temp/`, `scratch/`, or
-     similar).
+  2. An existing scratch directory at the repository root (`tmp/`, `temp/`, `scratch/`, or similar).
   3. The repository root, or the current working directory if not in a repository.
 
   Unless the argument exactly matches the file found, confirm the file you found with the user
@@ -52,8 +51,8 @@ gives one. Discard anything that is not a finding.
 
 ### 3. Deduplicate
 
-Match each finding against the existing issues by location and claim. For a match, add one bullet
-to the existing issue. Place the bullet after the last reviewer field and any earlier
+Match each finding against the existing issues by location and claim. For a match, add one bullet to
+the existing issue. Place the bullet after the last reviewer field and any earlier
 `- **Also reported:**` bullet, and before any `- **Validation:**` bullet:
 
 ```markdown
@@ -77,9 +76,9 @@ The converter returns one issue in the `deep-review` issue format and nothing el
 
 ### 5. Insert
 
-Place each returned issue under its severity heading, after the existing issues of that severity.
-If the report lacks the heading, create it in severity order: Blocking, Major, Suggestion, Style.
-Then update the report:
+Place each returned issue under its severity heading, after the existing issues of that severity. If
+the report lacks the heading, create it in severity order: Blocking, Major, Suggestion, Style. Then
+update the report:
 
 - Add an `EXT` column to the Summary table if the table has none, and update the counts.
 - Add each Blocking `EXT` issue to the list of blocking issues in the Summary.

@@ -13,15 +13,15 @@ guards, misread intent, and flag code that is already correct.
   "Temporary Test").
 - You MUST NOT put code in your return. The coordinator holds no code.
 - Ground every statement in code you have read or in a test you have run.
-- Name every piece of evidence. Write the file and line of each guard, caller, or check, the name
-  of each test, and the result of each run. Evidence without a name is not evidence.
+- Name every piece of evidence. Write the file and line of each guard, caller, or check, the name of
+  each test, and the result of each run. Evidence without a name is not evidence.
 
 ## Writing Your Return
 
 Write the `REASON`, `FIX`, `OPTIONS`, and `RECOMMEND` fields so that they read as a continuation of
-the issue entry in the report. Match the voice of that entry. The coordinator never reads the
-code, so name the evidence that decided your verdict. Lead with that evidence, and leave out the
-steps that did not settle the issue.
+the issue entry in the report. Match the voice of that entry. The coordinator never reads the code,
+so name the evidence that decided your verdict. Lead with that evidence, and leave out the steps
+that did not settle the issue.
 
 `OPTIONS` holds fixes that exclude each other. The user picks one. Never list steps that must all
 happen as options.
@@ -33,8 +33,8 @@ dropped it. An option that is the proposed solution MUST say so.
 ## Method
 
 1. **Read the issue.** Read the entry for your issue in the report. Skip the other entries. The
-   **Failure Scenario** is the claim to disprove. If the issue has no Failure Scenario, the
-   **Issue Statement** is the claim.
+   **Failure Scenario** is the claim to disprove. If the issue has no Failure Scenario, the **Issue
+   Statement** is the claim.
 2. **Find the code.** Read the code at the stated location in the working tree. The code may have
    moved since the review, so search by content if the line numbers are off.
 3. **Try to disprove the issue.** Look for:
@@ -70,8 +70,8 @@ Follow these rules for the test:
    it. When the issue has a Failure Scenario, the scenario is the prediction that confirms the
    issue. A result that matches neither prediction leaves the verdict `unclear`.
 2. **Isolate.** Write the test in a new file. Put `rrtmp` and your issue ID in the file name, so
-   that the coordinator can find a leftover file. Other validators run at the same time, so run
-   ONLY your own file.
+   that the coordinator can find a leftover file. Other validators run at the same time, so run ONLY
+   your own file.
 3. **Delete.** Delete the test file and every file that the run created before you return. Do this
    whatever the result is.
 4. **Report.** State in `REASON` what the test did and what the result was.
@@ -87,8 +87,8 @@ Follow these rules for the test:
 | `rejected` | You found evidence that the issue is false or already fixed. |
 | `unclear` | You could neither confirm nor disprove the issue. State what is missing. |
 
-Choose `rejected` ONLY with evidence. A guard you have read is evidence, and so is the result of
-a temporary test. Choose `unclear` when you merely doubt the issue.
+Choose `rejected` ONLY with evidence. A guard you have read is evidence, and so is the result of a
+temporary test. Choose `unclear` when you merely doubt the issue.
 
 ### Judgment
 

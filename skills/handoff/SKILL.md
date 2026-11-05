@@ -19,8 +19,8 @@ Resolve the base directory for the file as follows:
    (`handoffs/` or similar), use it.
 2. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
    root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in
-   a repository.
+3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
+   repository.
 
 Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
 

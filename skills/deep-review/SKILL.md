@@ -5,13 +5,13 @@ argument-hint: "[target] [base] — default behavior compares `HEAD` against `ma
 disable-model-invocation: true
 ---
 
-Review the changes on a branch against a base branch, then write one consolidated report. The
-review is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot
-interfere with other work in progress.
+Review the changes on a branch against a base branch, then write one consolidated report. The review
+is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot interfere
+with other work in progress.
 
 Five reviewers do the review, and each has one focus: security and privacy, performance, logic,
-compatibility, or style. Each reviewer explores the changes freely and writes a report. The five reports are
-then combined into one final report.
+compatibility, or style. Each reviewer explores the changes freely and writes a report. The five
+reports are then combined into one final report.
 
 ## Arguments
 
@@ -54,9 +54,9 @@ If the script fails, report the cause to the user.
 ### 2. First Pass Summary
 
 Spawn one agent to read the diffstat and changed-file list. This agent MUST run on a small model
-whenever available. The agent MUST write a 3-6 sentence plain language
-summary of the changes. Pass this summary to all reviewers as shared initial context. The summary
-also opens the final report (see "Report Structure").
+whenever available. The agent MUST write a 3-6 sentence plain language summary of the changes. Pass
+this summary to all reviewers as shared initial context. The summary also opens the final report
+(see "Report Structure").
 
 ### 3. Parallel Fan-Out
 
@@ -72,10 +72,9 @@ Pass each focus exactly as written below. You MUST NOT add example issues, suspe
 areas to check. The coordinator has not read the code, so its guesses can bias what a reviewer
 reports.
 
-Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report.
-Test files are in scope for every focus. A reviewer MUST NOT leave test files out of the diff it
-reads. Always launch all five reviewers regardless of how small the diff is. A reviewer MAY report
-"No issues found".
+Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report. A
+reviewer MUST NOT leave test files out of the diff it reads. Always launch all five reviewers
+regardless of how small the diff is. Reviewers MAY report "No issues found".
 
 The five focuses:
 
@@ -89,7 +88,7 @@ The five focuses:
   - Needless work or complexity
   - N+1 queries
   - Wasteful memory allocations or I/O ops
-- **Correctness: Logic**
+- **Logic**
   - Errors in logic
   - Mismatch with intent
   - Broken edge cases
@@ -99,8 +98,8 @@ The five focuses:
 
   The logic reviewer MUST search in these passes, in order:
 
-  1. **Line by line.** Read every changed hunk and the whole function around it. For each line,
-     ask what input, state, or timing makes the line wrong. Bugs in unchanged lines of a changed
+  1. **Line by line.** Read every changed hunk and the whole function around it. For each line, ask
+     what input, state, or timing makes the line wrong. Bugs in unchanged lines of a changed
      function are in scope.
   2. **Removed behavior.** For each deleted or replaced line, name the rule it enforced. Then find
      where the new code enforces that rule. If no code does, report it.
@@ -110,7 +109,7 @@ The five focuses:
   5. **Tests.** Check that each test's assertion holds because of the code under test, not because
      of a mock. Check that each test's teardown undoes its setup.
   6. **Gaps.** Re-read the diff one last time, looking only for issues not yet listed.
-- **Correctness: Compatibility**
+- **Compatibility**
   - Unintended breaks in backwards compatibility
 
   The compatibility reviewer MUST search in these passes, in order:
@@ -125,7 +124,7 @@ The five focuses:
   - Excessive or trivial comments on well-written code
   - Violation of any rules provided in `AGENTS.md`, `CLAUDE.md`, and the like
 
-On top of their passes, both correctness reviewers MUST apply the scenario rule:
+On top of their passes, the logic and compatibility reviewers MUST apply the scenario rule:
 
 1. For each candidate problem, write the concrete scenario. For a logic, edge case, or error
    handling problem, write the input or state, then the wrong output or crash. For an intent or
@@ -139,23 +138,22 @@ the same issue.
 
 ### 4. Consolidated Report
 
-Collate, deduplicate, and organize the five reports. Do NOT overrule a reviewer: every issue
-a reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into
-a single entry that names every ID which reported it. A merged entry MUST have a single Context
-block and at most one Failure Scenario. Rewrite each rather than concatenating versions from each
-reviewer.
+Collate, deduplicate, and organize the five reports. Do NOT overrule a reviewer: every issue a
+reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into a single
+entry that names every ID which reported it. A merged entry MUST have a single Context block and at
+most one Failure Scenario. Rewrite each rather than concatenating versions from each reviewer.
 
 ### 5. Final Report and Summary
 
-Write the full report to a file named `review-<target>-<date>.md`, where `<date>` is the output
-of `date +%F`. Resolve the base directory for the file as follows:
+Write the full report to a file named `review-<target>-<date>.md`, where `<date>` is the output of
+`date +%F`. Resolve the base directory for the file as follows:
 
 1. **Reviews Directory.** If the repository has a directory conventionally used for reviews
    (`reviews/` or similar), use it.
 2. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
    root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in
-   a repository.
+3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
+   repository.
 
 Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
 
@@ -207,8 +205,8 @@ Use one ID prefix per focus:
 
 - `SEC` for security and privacy
 - `PERF` for performance
-- `LOG` for correctness: logic
-- `COM` for correctness: compatibility
+- `LOG` for logic
+- `COM` for compatibility
 - `STY` for style
 
 Group issues by severity, blocking first. Open each report with a 2-3 sentence summary.
@@ -221,6 +219,6 @@ The final report MUST use this format:
    purpose of the work before it lists problems with the work.
 2. **Summary.** A table of issue counts per severity per focus followed by the list of blocking
    issues.
-3. **Issues by Severity.** Issues in order: Blocking → Major → Suggestion → Style. Each issue
-   keeps its ID and focus tag. A merged issue MUST list the ID from each reviewer and combine
-   their content.
+3. **Issues by Severity.** Issues in order: Blocking → Major → Suggestion → Style. Each issue keeps
+   its ID and focus tag. A merged issue MUST list the ID from each reviewer and combine their
+   content.
