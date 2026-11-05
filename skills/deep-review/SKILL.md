@@ -1,6 +1,6 @@
 ---
 name: deep-review
-description: Runs a deep review on a branch with five focuses (security and privacy, performance, logic, compatibility, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
+description: Runs a deep review on a branch with six focuses (security and privacy, performance, logic, compatibility, design, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
 argument-hint: "[target] [base] — default behavior compares `HEAD` against `main`/`master`"
 disable-model-invocation: true
 ---
@@ -9,9 +9,9 @@ Review the changes on a branch against a base branch, then write one consolidate
 is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot interfere
 with other work in progress.
 
-Five reviewers do the review, and each has one focus: security and privacy, performance, logic,
-compatibility, or style. Each reviewer explores the changes freely and writes a report. The five
-reports are then combined into one final report.
+Six reviewers do the review, and each has one focus: security and privacy, performance, logic,
+compatibility, design, or style. Each reviewer explores the changes freely and writes a report. The
+six reports are then combined into one final report.
 
 ## Arguments
 
@@ -60,23 +60,24 @@ this summary to all reviewers as shared initial context. The summary also opens 
 
 ### 3. Parallel Fan-Out
 
-Call the five reviewers to run in parallel (the same message passed to five `Agent` calls). Do NOT
+Call the six reviewers to run in parallel (the same message passed to six `Agent` calls). Do NOT
 paste the diff into their prompts. Provide each reviewer with the same context and with its
 individual focus:
 
 - `WORKDIR`, `MERGE_BASE`, `TARGET_SHA`, `DIFF_CMD`, diffstat, and changed-file list.
 - The first pass summary from step 2.
 - Instructions on issue report format and individual focus.
+- The drop rule and the "Considered, Not Reported" table format, both as written below.
 
 Pass each focus exactly as written below. You MUST NOT add example issues, suspected problems, or
 areas to check. The coordinator has not read the code, so its guesses can bias what a reviewer
 reports.
 
 Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report. A
-reviewer MUST NOT leave test files out of the diff it reads. Always launch all five reviewers
+reviewer MUST NOT leave test files out of the diff it reads. Always launch all six reviewers
 regardless of how small the diff is. Reviewers MAY report "No issues found".
 
-The five focuses:
+The six focuses:
 
 - **Security and Privacy**
   - Leaked secrets
@@ -117,6 +118,29 @@ The five focuses:
   1. **Callers.** For each changed function, find every caller. Check each caller against the new
      preconditions, return values, exceptions, and ordering.
   2. **Gaps.** Re-read the diff one last time, looking only for issues not yet listed.
+- **Design**
+  - The same fact kept in more than one place
+  - Values that must agree but travel by separate paths
+  - Defaults, parameters, branches, or fields that nothing uses
+  - Fixes at the wrong depth
+
+  The design reviewer MUST search in these passes, in order:
+
+  1. **One fact, one place.** For each list, rule, number, order, or default that the diff writes,
+     search the codebase for every other place that states the same fact. Report each copy that
+     only a comment or a naming convention keeps in step. A test that fails when the copies
+     disagree counts as a guard.
+  2. **Values that travel together.** For each value that the diff passes between functions, check
+     whether the receiver also needs a second value that arrives by another path. Report each pair
+     that a caller can pass out of step.
+  3. **Unused paths.** For each default, parameter, branch, or field that the diff adds, find a
+     caller or an input that uses it. Report each one that nothing uses.
+  4. **Altitude.** For each problem that the diff fixes, name its root cause. Then check whether the
+     fix changes the mechanism that causes the problem or adds a special case beside it. Report a
+     special case when a change to the shared mechanism would remove the problem.
+  5. **Gaps.** Re-read the diff one last time, looking only for issues not yet listed.
+
+  A design issue whose scenario needs a later edit is a Suggestion or a Style issue.
 - **Style**
   - Non-idiomatic use of language or framework
   - Violation of existing codebase patterns
@@ -124,24 +148,59 @@ The five focuses:
   - Excessive or trivial comments on well-written code
   - Violation of any rules provided in `AGENTS.md`, `CLAUDE.md`, and the like
 
-On top of their passes, the logic and compatibility reviewers MUST apply the scenario rule:
+On top of their passes, the logic, compatibility, and design reviewers MUST apply the scenario rule:
 
 1. For each candidate problem, write the concrete scenario. For a logic, edge case, or error
    handling problem, write the input or state, then the wrong output or crash. For an intent or
    compatibility problem, write the behavior that a caller or the first pass summary expects, then
-   the behavior the code gives.
+   the behavior the code gives. For a design problem, write a plausible later edit that changes
+   only one copy or one path, then the wrong output or crash that follows.
 2. Drop any candidate that has no concrete scenario.
 
 Rule for reviewers: report ONLY issues pertinent to your focus. However, if an issue MIGHT pertain
 to your focus, report it even when it also belongs to another focus. Several reviewers MAY report
 the same issue.
 
+Every reviewer MUST apply the drop rule to each candidate in its focus. A reviewer MAY leave such a
+candidate out of its issues for only these reasons:
+
+- **False.** The reviewer checked the candidate, and the code does not behave as the candidate
+  claims.
+- **No scenario.** The candidate has no concrete scenario under the scenario rule. Only the
+  reviewers that apply the scenario rule MAY use this reason.
+- **Accepted by intent.** A spec, plan, or ticket that the reviewer read accepts this exact
+  behavior. The reviewer MUST cite the document and the section.
+
+Any other doubt lowers the severity or the confidence of the issue. Such a doubt MUST NOT remove the
+issue. Examples are "no current caller triggers it", "the cost is small", and "an earlier decision
+seems related". The reviewer MUST state the doubt in the Confidence Note.
+
+Every reviewer MUST end its report with a "Considered, Not Reported" section. The section holds one
+table row per dropped candidate:
+
+```markdown
+| Location | Candidate | Reason | Detail |
+|---|---|---|---|
+| `path/to/file.js:120` | One sentence that states the candidate | False | The evidence that the claim is false |
+```
+
+`Reason` is `False`, `No scenario`, or `Accepted by intent`. For `Accepted by intent`, `Detail`
+cites the document and the section. A reviewer that dropped no candidate writes "None." under the
+heading.
+
 ### 4. Consolidated Report
 
-Collate, deduplicate, and organize the five reports. Do NOT overrule a reviewer: every issue a
+Collate, deduplicate, and organize the six reports. Do NOT overrule a reviewer: every issue a
 reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into a single
 entry that names every ID which reported it. A merged entry MUST have a single Context block and at
 most one Failure Scenario. Rewrite each rather than concatenating versions from each reviewer.
+
+Collect the "Considered, Not Reported" rows of all six reports into one table. Add a `Reviewer`
+column that names the focus. Merge rows that describe the same candidate, and name every reviewer
+that dropped it. Leave out a row when another reviewer reported the same problem as an issue. In
+that case, add one sentence to the issue's Confidence Note. The sentence names the reviewer that
+dropped the candidate and states that reviewer's reason. Do NOT leave out a row for any other
+reason.
 
 ### 5. Final Report and Summary
 
@@ -158,8 +217,8 @@ Write the full report to a file named `review-<target>-<date>.md`, where `<date>
 Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
 
 Report the file location to the user with a short summary of findings: the count of issues by
-severity, and the top-level blocking issues. Do NOT reproduce the entire report unless it contains
-three or fewer issues.
+severity, the top-level blocking issues, and the count of rows in the "Considered, Not Reported"
+table for each reason. Do NOT reproduce the entire report unless it contains three or fewer issues.
 
 ### 6. Cleanup
 
@@ -186,7 +245,8 @@ does for the work on the branch, and who consumes it. Do NOT describe the proble
 sentences, grounded in code you have read. If the purpose is unclear, state plainly that the purpose
 is unclear.
 
-**Failure Scenario:** (REQUIRED when any ID in the heading is `LOG` or `COM`, OPTIONAL otherwise)
+**Failure Scenario:** (REQUIRED when any ID in the heading is `LOG`, `COM`, or `DES`, OPTIONAL
+otherwise)
 The input, state, or expected behavior, then the wrong output, crash, or actual behavior. One or
 two sentences.
 
@@ -207,6 +267,7 @@ Use one ID prefix per focus:
 - `PERF` for performance
 - `LOG` for logic
 - `COM` for compatibility
+- `DES` for design
 - `STY` for style
 
 Group issues by severity, blocking first. Open each report with a 2-3 sentence summary.
@@ -222,3 +283,5 @@ The final report MUST use this format:
 3. **Issues by Severity.** Issues in order: Blocking → Major → Suggestion → Style. Each issue keeps
    its ID and focus tag. A merged issue MUST list the ID from each reviewer and combine their
    content.
+4. **Considered, Not Reported.** The merged table from step 4. Sort its rows by reason: `Accepted by
+   intent` first, then `No scenario`, then `False`.
