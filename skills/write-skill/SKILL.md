@@ -25,7 +25,8 @@ description: Create a new skill, including its SKILL.md, reference files, and sc
 3. **Write.** Read [GUIDELINES.md](GUIDELINES.md). Draft SKILL.md and any supporting files (see
    "Structure"). The draft MUST address every failure recorded in step 2.
 
-4. **Self-Review.** Answer each question in the GUIDELINES.md checklist. Fix every "no".
+4. **Self-Review.** Work through the GUIDELINES.md checklist, which starts with
+   `scripts/check-skill.sh`.
 
 5. **Test.** Run each test with the draft (see "Test Runs"). Then:
    - Fix the draft for each failed pass check, and for each instruction the subagent skipped or
@@ -52,16 +53,7 @@ description: Create a new skill, including its SKILL.md, reference files, and sc
 
 ## Structure
 
-### Directory
-
-```text
-skill-name/
-├── EXAMPLES.md     # Optional
-├── <REFERENCE>.md  # Optional
-├── SKILL.md        # Required
-└── scripts/        # Optional
-    └── <SCRIPT>.sh
-```
+Name each sibling file in capitals, such as `EXAMPLES.md`.
 
 ### Save Location
 

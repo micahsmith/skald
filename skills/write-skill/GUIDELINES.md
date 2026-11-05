@@ -2,6 +2,9 @@
 
 Version 1.
 
+Contents: What Earns a Line, Rules Over Judgment, Wording, Cost, Structure, Scripts, Description,
+Checklist.
+
 Apply these rules to every file in a skill. An agent reads the skill on every use, so each line
 costs tokens and attention every time.
 
@@ -51,8 +54,9 @@ Verify with the strongest check available:
 
 ## Wording
 
-- Write modality with RFC 2119 keywords in capitals: MUST, MUST NOT, SHOULD, SHOULD NOT, MAY.
-  Capitalize no other word for emphasis. Write "only", "not", "never", and "always" in lowercase.
+- Write modality with RFC 2119 keywords in capitals: MUST, MUST NOT, SHOULD, SHOULD NOT, MAY,
+  REQUIRED, OPTIONAL. Capitalize no other word for emphasis. Write "only", "not", "never", and
+  "always" in lowercase.
 - Use MUST only when a violation breaks the result. Use SHOULD for a default with known exceptions.
   Write an ordinary step as a plain imperative.
 - Add no intensifiers such as "CRITICAL" or "IMPORTANT". State each rule once. Emphasis makes
@@ -99,7 +103,8 @@ unbounded instruction can be the most expensive line in a skill.
 
 ## Checklist
 
-Answer each question yes or no. Fix every "no".
+Run `scripts/check-skill.sh` from the directory of this file, with the skill directory as its
+argument. Fix every line it prints. Then answer each question yes or no. Fix every "no".
 
 1. Does every sentence pass the deletion test?
 2. Does every rule trace to the user, the codebase, or an observed failure?

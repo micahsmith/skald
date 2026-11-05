@@ -1,31 +1,25 @@
 ---
 name: deep-review
-description: Runs a deep review on a branch with six focuses (security and privacy, performance, logic, compatibility, design, style) and creates a consolidated report. Use when the user asks to deeply review or audit a branch without disturbing the working tree.
+description: Runs a read-only deep review of a branch with six focuses (security and privacy, performance, logic, compatibility, design, style) and writes a consolidated report.
 argument-hint: "[target] [base] — default behavior compares `HEAD` against `main`/`master`"
 disable-model-invocation: true
 ---
 
-Review the changes on a branch against a base branch, then write one consolidated report. The review
-is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot interfere
-with other work in progress.
-
-Six reviewers do the review, and each has one focus: security and privacy, performance, logic,
-compatibility, design, or style. Each reviewer explores the changes freely and writes a report. The
-six reports are then combined into one final report.
+The review is read-only. It MUST NOT switch branches or touch the user's working tree, so it cannot
+interfere with other work in progress.
 
 ## Arguments
 
-The arguments indicate the branch under review (`TARGET`) and the branch to compare against
-(`BASE`). Accept either positional references or plain language ("review this branch against the
-`dev` branch").
+The arguments name the branch under review (`TARGET`) and the branch to compare against (`BASE`).
+Accept either positional references or plain language ("review this branch against the `dev`
+branch").
 
-- No arguments: `TARGET` is the current branch. `BASE` is `main`, `master`, or whichever branch
-  serves as the primary branch. If you cannot find an obvious branch candidate, ask the user.
-- One argument: the argument is `TARGET`. Resolve `BASE` using the same rules as above.
+- No arguments: `TARGET` is the current branch. Pass no `BASE`, so that the prep script uses `main`
+  or `master`.
+- One argument: the argument is `TARGET`. Pass no `BASE`.
 - Two arguments: the first argument is `TARGET` and the second is `BASE`.
 
-By default, fetch the latest from the remote. Pass `--no-fetch` to the prep script when the user
-asks to skip the fetch or is working offline.
+Pass `--no-fetch` to the prep script when the user asks to skip the fetch or is offline.
 
 ## Steps
 
@@ -37,45 +31,33 @@ Run the prep script with the resolved references:
 bash scripts/prepare-review.sh [--no-fetch] [TARGET] [BASE]
 ```
 
-The script will resolve the references, compute the merge-base, and decide whether the review can be
-done in place or in a throwaway worktree. It returns a summary block that delineates the work to be
-reviewed. The summary block includes:
-
-- `WORKDIR`: where reviewers undertake the review (the worktree or the repo root if the review is
-  "in place").
-- `TARGET_SHA`: the commit SHA containing the changes to be reviewed (`TARGET`).
-- `MERGE_BASE`: the `BASE` against which `TARGET` is compared.
-- `DIFF_CMD`: the diff command reviewers MUST run.
-- `CLEANUP`: the command to clean up the worktree (if present) after the review is finished.
-- The diffstat and changed-file list.
-
-If the script fails, report the cause to the user.
+The script prints the values that later steps use: `WORKDIR`, `MERGE_BASE`, `TARGET_SHA`,
+`DIFF_CMD`, the diffstat, the changed-file list, and `CLEANUP` when it created a worktree. If the
+script fails, report the cause to the user.
 
 ### 2. First Pass Summary
 
-Spawn one agent to read the diffstat and changed-file list. This agent MUST run on a small model
-whenever available. The agent MUST write a 3-6 sentence plain language summary of the changes. Pass
-this summary to all reviewers as shared initial context. The summary also opens the final report
-(see "Report Structure").
+Spawn one subagent with the diffstat and the changed-file list. It SHOULD run on a small model when
+the harness can choose one. It writes a 3-6 sentence plain-language summary of the changes.
 
 ### 3. Parallel Fan-Out
 
-Call the six reviewers to run in parallel (the same message passed to six `Agent` calls). Do NOT
-paste the diff into their prompts. Provide each reviewer with the same context and with its
-individual focus:
+Launch the six reviewers in parallel, as six `Agent` calls in one message. Give each reviewer the
+same context and its own focus:
 
-- `WORKDIR`, `MERGE_BASE`, `TARGET_SHA`, `DIFF_CMD`, diffstat, and changed-file list.
+- `WORKDIR`, `MERGE_BASE`, `TARGET_SHA`, `DIFF_CMD`, the diffstat, and the changed-file list.
 - The first pass summary from step 2.
-- Instructions on issue report format and individual focus.
+- The issue format and its focus.
 - The drop rule and the "Considered, Not Reported" table format, both as written below.
 
 Pass each focus exactly as written below. You MUST NOT add example issues, suspected problems, or
-areas to check. The coordinator has not read the code, so its guesses can bias what a reviewer
-reports.
+areas to check, because you have not read the code and your guesses can bias what a reviewer
+reports. Do not paste the diff into the prompts.
 
-Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report. A
-reviewer MUST NOT leave test files out of the diff it reads. Always launch all six reviewers
-regardless of how small the diff is. Reviewers MAY report "No issues found".
+Each reviewer MUST run `DIFF_CMD` itself and read the whole diff, test files included. A reviewer
+MAY read any code under `WORKDIR`. A reviewer is done when it has checked every changed hunk against
+each item of its focus and has run its passes. Launch all six reviewers however small the diff is.
+A reviewer MAY report "No issues found".
 
 The six focuses:
 
@@ -157,9 +139,9 @@ On top of their passes, the logic, compatibility, and design reviewers MUST appl
    only one copy or one path, then the wrong output or crash that follows.
 2. Drop any candidate that has no concrete scenario.
 
-Rule for reviewers: report ONLY issues pertinent to your focus. However, if an issue MIGHT pertain
-to your focus, report it even when it also belongs to another focus. Several reviewers MAY report
-the same issue.
+Each reviewer reports only issues in its focus. A reviewer reports an issue that might belong to its
+focus, even when the issue also belongs to another focus. Several reviewers MAY report the same
+issue.
 
 Every reviewer MUST apply the drop rule to each candidate in its focus. A reviewer MAY leave such a
 candidate out of its issues for only these reasons:
@@ -190,7 +172,7 @@ heading.
 
 ### 4. Consolidated Report
 
-Collate, deduplicate, and organize the six reports. Do NOT overrule a reviewer: every issue a
+Collate, deduplicate, and organize the six reports. Do not overrule a reviewer: every issue a
 reviewer flags MUST reach the final report. Merge an issue raised by several reviewers into a single
 entry that names every ID which reported it. A merged entry MUST have a single Context block and at
 most one Failure Scenario. Rewrite each rather than concatenating versions from each reviewer.
@@ -199,8 +181,7 @@ Collect the "Considered, Not Reported" rows of all six reports into one table. A
 column that names the focus. Merge rows that describe the same candidate, and name every reviewer
 that dropped it. Leave out a row when another reviewer reported the same problem as an issue. In
 that case, add one sentence to the issue's Confidence Note. The sentence names the reviewer that
-dropped the candidate and states that reviewer's reason. Do NOT leave out a row for any other
-reason.
+dropped the candidate and states that reviewer's reason. Keep every other row.
 
 ### 5. Final Report and Summary
 
@@ -218,7 +199,7 @@ Use `mktemp` or a system temp directory ONLY inside a script bundled with this s
 
 Report the file location to the user with a short summary of findings: the count of issues by
 severity, the top-level blocking issues, and the count of rows in the "Considered, Not Reported"
-table for each reason. Do NOT reproduce the entire report unless it contains three or fewer issues.
+table for each reason. Reproduce the entire report only when it contains three or fewer issues.
 
 ### 6. Cleanup
 
@@ -226,9 +207,9 @@ If the prep script returned a `CLEANUP` line, run that command to remove the wor
 
 ## Issue Format
 
-Every reviewer MUST use this standard format for every issue. Write each issue in plain and simple
-language. You MAY use technical terms that developers commonly understand, but you MUST avoid
-jargon. A reader MUST be able to understand each issue from the report alone.
+Every reviewer MUST use this format for every issue. Write each issue in plain language. Use
+technical terms that developers commonly know, and avoid other jargon. A reader MUST be able to
+understand each issue from the report alone.
 
 Use this format:
 
@@ -276,12 +257,10 @@ Group issues by severity, blocking first. Open each report with a 2-3 sentence s
 
 The final report MUST use this format:
 
-1. **What This Branch Does.** The first pass summary from step 2, so that the report states the
-   purpose of the work before it lists problems with the work.
+1. **What This Branch Does.** The first pass summary from step 2.
 2. **Summary.** A table of issue counts per severity per focus followed by the list of blocking
    issues.
 3. **Issues by Severity.** Issues in order: Blocking → Major → Suggestion → Style. Each issue keeps
-   its ID and focus tag. A merged issue MUST list the ID from each reviewer and combine their
-   content.
+   its ID and focus tag.
 4. **Considered, Not Reported.** The merged table from step 4. Sort its rows by reason: `Accepted by
    intent` first, then `No scenario`, then `False`.
