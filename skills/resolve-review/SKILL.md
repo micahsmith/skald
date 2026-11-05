@@ -1,22 +1,23 @@
 ---
 name: resolve-review
-description: Triage and resolve issues from a `deep-review` report. Validates every issue, delegates simple low-risk fixes, walks through more complex review items, and tracks the status of review items. Use when there is a need to resolve, triage, or fix the issues in a `deep-review` report.
+description: Triage and resolve issues from a `deep-review` report. Validates every issue, delegates simple low-risk fixes, walks through more complex review items, and tracks the status of review items.
 argument-hint: "[report-path]"
 disable-model-invocation: true
 ---
 
-Process a `deep-review` report systematically. You are the coordinator. Subagents read the code and
-change the code. You only handle verdicts, decisions, and statuses, to keep your context small.
+You are the coordinator. Subagents read and change the code. You handle verdicts, decisions, and
+statuses.
 
 ## Rules
 
-- You MUST NOT read source code. Delegate every code read to a subagent. You MAY read the report,
-  `git` status output, and test output.
-- You alone edit the report. Subagents MUST NOT edit the report.
-- All fixes land in the shared working tree. You and the subagents MUST NOT commit, stage, stash, or
-  switch branches. The user handles commits.
-- Run at most 4 sub-agents (validators or fixers) at once.
-- Accept ONLY a `deep-review` report.
+- You MUST NOT read source code, so that your context stays small. You MAY read the report, `git`
+  status output, and test output.
+- You alone edit the report.
+- All fixes land in the shared working tree. You MUST NOT commit, stage, stash, or switch branches.
+  The user handles commits.
+- Run at most 4 subagents (validators or fixers) at once.
+- Accept only a `deep-review` report. For findings from another review, tell the user to run
+  `merge-review` first.
 
 ## Vocabulary
 
@@ -59,8 +60,7 @@ The argument is the path to the report. If the argument is missing, look for the
 2. An existing scratch directory at the repository root (`tmp/`, `temp/`, `scratch/`, or similar).
 3. The repository root, or the current working directory if not in a repository.
 
-Unless the argument exactly matches the file found, confirm the file you found with the user before
-you continue.
+If you found the report by search, confirm it with the user before you continue.
 
 List the issues without reading the whole report:
 
@@ -137,8 +137,8 @@ Set the status of each validated issue from this table:
 | `confirmed`, `confirmed-alt` | `mechanical` | `high` | The user approves in bulk. | `awaiting-decision` |
 | `confirmed`, `confirmed-alt` | `choice` | any | The user picks an option. | `awaiting-decision` |
 | `confirmed`, `confirmed-alt` | `design` | any | Discuss with the user, last. | `awaiting-decision` |
-| `rejected` | — | — | Surface the issue. Do NOT fix it. | `rejected` |
-| `unclear` | — | — | Surface the issue. Do NOT fix it. | `unclear` |
+| `rejected` | — | — | Surface the issue. Do not fix it. | `rejected` |
+| `unclear` | — | — | Surface the issue. Do not fix it. | `unclear` |
 
 For a `confirmed-alt` issue, the fixer applies the validator's fix instead of the proposed solution.
 Record the validator's fix in the note.
@@ -147,7 +147,7 @@ The user MAY override a `rejected` or `unclear` verdict. An overridden issue bec
 
 ### 5. Fix in Waves
 
-Start the first wave as soon as validation ends. Do NOT wait for the user.
+Start the first wave as soon as validation ends. Do not wait for the user.
 
 Plan each wave as follows:
 
@@ -200,7 +200,7 @@ The batch has three parts. Omit any empty part.
    Recommend A, because every caller already passes a timestamp.
    ```
 
-   Letter ONLY options that exclude each other. Never letter steps that must all happen. Each option
+   Letter only options that exclude each other. Never letter steps that must all happen. Each option
    states the fix and its trade-off.
 3. **Not Fixed.** Every `rejected`, `unclear`, and `blocked` issue, each with its reason. The user
    MAY override any of them.
@@ -213,7 +213,7 @@ with `skipped`.
 
 ### 7. Verify
 
-Fixers run targeted tests during the waves. After the last wave, run the full test suite yourself.
+After the last wave, run the full test suite yourself.
 
 Attribute each failure to an issue by footprint: match the failing file or test to the files each
 fixer touched. Send the failure back to one fixer for that issue, on the session default model. If
@@ -234,7 +234,7 @@ Give the user a short summary:
 ## Tracking
 
 The report is the only record of progress. A fresh session MUST be able to resume from the report
-alone. Update the report at every status change. Do NOT batch the updates.
+alone. Update the report at every status change. Do not batch the updates.
 
 ### Triage Table
 
@@ -260,8 +260,7 @@ Add the table as its own section directly after the Summary section of the repor
 
 Add a validation block to an issue as soon as its validator returns. Write the block after the last
 part of the issue: after the last `- **Also reported:**` bullet when present (`merge-review` adds
-these), otherwise after **Confidence Note** when present, otherwise after **Proposed Solution**. The
-reader then meets the context and the problem before the verdict.
+these), otherwise after **Confidence Note** when present, otherwise after **Proposed Solution**.
 
 The top bullet holds only the verdict. Sub-bullets hold the rest, each with a fixed label, in this
 order:
@@ -272,10 +271,6 @@ order:
 | `Fix` | Verdict is `confirmed-alt` | The validator's `FIX`: the fix to apply, and the fate of the proposed solution. |
 | `Options` | Judgment is `choice` | The validator's `OPTIONS`: lettered fixes that exclude each other, each with its trade-off. An option that is the proposed solution says so. |
 | `Recommend` | Judgment is `choice` | The validator's `RECOMMEND`: the letter and one reason. |
-
-A `rejected` or `unclear` verdict has only `Evidence`. A plain `confirmed` verdict has no `Fix`,
-because the Proposed Solution already holds the fix. Drop the `FIX` field that the validator returns
-in that case.
 
 ```markdown
 - **Validation:** rejected

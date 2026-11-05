@@ -24,12 +24,13 @@ TARGET="${positional[0]:-HEAD}"
 BASE_ARG="${positional[1]:-}"
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
-  echo "ERROR: not inside a git repository" >&2; exit 1; }
+  echo "ERROR: not inside a git repository. Run the script from the repository under review." >&2; exit 1; }
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 if [ "$FETCH" -eq 1 ]; then
-  git fetch --quiet --all --prune || true
+  git fetch --quiet --all --prune ||
+    echo "WARNING: fetch failed, so local refs may be stale. Pass --no-fetch to skip the fetch." >&2
 fi
 
 # Resolve BASE from arg if present; otherwise `main`; otherwise `master`
@@ -43,14 +44,14 @@ resolve_base() {
 
 BASE="$(resolve_base)"
 [ -n "$BASE" ] || {
-  echo "ERROR: base branch could not be resolved" >&2; exit 1; }
+  echo "ERROR: no main or master branch found. Pass BASE as the second argument." >&2; exit 1; }
 git rev-parse --verify --quiet "$BASE" >/dev/null || {
-  echo "ERROR: base ref '$BASE' not found" >&2; exit 1; }
+  echo "ERROR: base ref '$BASE' not found. Check the name, or fetch the branch." >&2; exit 1; }
 git rev-parse --verify --quiet "$TARGET" >/dev/null || {
-  echo "ERROR: target ref '$TARGET' not found" >&2; exit 1; }
+  echo "ERROR: target ref '$TARGET' not found. Check the name, or fetch the branch." >&2; exit 1; }
 
 MERGE_BASE="$(git merge-base "$BASE" "$TARGET")" || {
-  echo "ERROR: '$BASE' and '$TARGET' share no common ancestor" >&2; exit 1; }
+  echo "ERROR: '$BASE' and '$TARGET' share no common ancestor. Pass a BASE that shares history with TARGET." >&2; exit 1; }
 
 TARGET_SHA="$(git rev-parse "$TARGET")"
 HEAD_SHA="$(git rev-parse HEAD)"
