@@ -32,8 +32,8 @@ Interview the user to fill any gap in context or reasoning.
 Write an ADR ONLY WHEN both conditions hold:
 
 1. **The decision is hard to reverse.**
-2. **The decision binds code beyond the component that makes it.** Other modules, services, or
-   teams must conform to the decision, so its trade-offs reach past the code that chose it.
+2. **The decision binds code beyond the component that makes it.** Other modules, services, or teams
+   must conform to the decision, so its trade-offs reach past the code that chose it.
 
 Two kinds of decision usually meet both conditions:
 
@@ -49,8 +49,8 @@ the ADR ONLY if the user confirms. This gate keeps the ADRs signal-rich.
 
 ## ADR Template
 
-Each ADR is a single Markdown file. The frontmatter MUST carry two fields: `date` in ISO 8601 format,
-and `status`. Frontmatter follows typical Markdown conventions.
+Each ADR is a single Markdown file. The frontmatter MUST carry two fields: `date` in ISO 8601
+format, and `status`. Frontmatter follows typical Markdown conventions.
 
 After the frontmatter, write a heading that states the decision. Below the heading, write one to
 three sentences that give the context, the decision, and the reason.

@@ -21,8 +21,8 @@ executed successfully. Leave most implementation to the executing agent. The exe
 code. The plan constrains only the choices that are costly to get wrong or that would drift from the
 agreed design.
 
-A full spec file is the preferred input, but it is NOT REQUIRED. If you lack the context to create
-a plan, use `/brainstorm` and `/write-spec` first.
+A full spec file is the preferred input, but it is NOT REQUIRED. If you lack the context to create a
+plan, use `/brainstorm` and `/write-spec` first.
 
 ## Process
 
@@ -128,8 +128,8 @@ Resolve the base directory for the plan as follows:
    exists (`plans/`, `specs/`, `prds/`, or similar), use it.
 3. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
    root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-4. **Fallback.** Otherwise, use the repository root, or the current working directory if not in
-   a repository.
+4. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
+   repository.
 
 If no spec exists, create a new directory inside the resolved base directory. Name the new directory
 in kebab-case, using at most four words that describe the work. Write the plan there.
@@ -163,9 +163,9 @@ The user will review the file conversationally.
 
 ## Tests
 
-Tests MAY be either unit or integration tests. Tests MAY verify either behavior or properties.
-Write tests to guide the implementation. Excessive fixtures and complicated mocking often indicate
-that the unit under test needs refactoring.
+Tests MAY be either unit or integration tests. Tests MAY verify either behavior or properties. Write
+tests to guide the implementation. Excessive fixtures and complicated mocking often indicate that
+the unit under test needs refactoring.
 
 Write every test to verify current state and behavior. Delete any test that only confirms behavior
 changed from an earlier state of the codebase. Remove such tests before you report completion.
