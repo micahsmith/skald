@@ -10,9 +10,7 @@ review is read-only. It MUST NOT switch branches or touch the user's working tre
 interfere with other work in progress.
 
 Five reviewers do the review, and each has one focus: security and privacy, performance, logic,
-compatibility, or style. The logic and compatibility reviewers are the two correctness reviewers.
-The logic reviewer checks the changed code itself, and the compatibility reviewer checks the code
-that calls it. Each reviewer explores the changes freely and writes a report. The five reports are
+compatibility, or style. Each reviewer explores the changes freely and writes a report. The five reports are
 then combined into one final report.
 
 ## Arguments
@@ -55,8 +53,8 @@ If the script fails, report the cause to the user.
 
 ### 2. First Pass Summary
 
-Spawn one agent to read the diffstat and changed-file list. This agent SHOULD run on a small model
-(such as Haiku) when the harness can choose one. The agent MUST write a 3-6 sentence plain language
+Spawn one agent to read the diffstat and changed-file list. This agent MUST run on a small model
+whenever available. The agent MUST write a 3-6 sentence plain language
 summary of the changes. Pass this summary to all reviewers as shared initial context. The summary
 also opens the final report (see "Report Structure").
 
