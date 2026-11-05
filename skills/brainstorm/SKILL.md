@@ -24,8 +24,8 @@ questions from the codebase before asking the user.
   - You MAY recommend an answer.
 - **Work through decisions in order:**
   - Address decisions that have broader implications first and keep minor decisions to the end.
-  - Only resolve decisions that change the outcome. Be relentless about alignment, but stop short
-    of exhaustive interrogation.
+  - Only resolve decisions that change the outcome. Be relentless about alignment, but stop short of
+    exhaustive interrogation.
 - **Let the user end the interview:**
   - You MAY inform the user when you think the interview is done.
   - The user MAY end the interview at any time.
@@ -41,15 +41,15 @@ You are aligned when you can state four things and the user agrees with all of t
 - scope
 - success criteria
 
-Before you conclude, surface any decision that is still open. For each one, propose 2-3 options
-with their trade-offs and your recommendation. The user makes the choice; do NOT assume it.
+Before you conclude, surface any decision that is still open. For each one, propose 2-3 options with
+their trade-offs and your recommendation. The user makes the choice; do NOT assume it.
 
 When you believe you are there, play back the full picture in your own words and ask the user to
 confirm or correct it. Alignment is their agreement, not your assumption.
 
 ## What Happens Next
 
-Nothing is mandated. The shared understanding is the deliverable. That understanding may become
-a written spec, a design doc, an implementation plan, or direct work. It may also stay as agreed
-context. Ask the user where they want to take it. Do NOT assume a structure, a file location, or
-a next skill.
+Nothing is mandated. The shared understanding is the deliverable. That understanding may become a
+written spec, a design doc, an implementation plan, or direct work. It may also stay as agreed
+context. Ask the user where they want to take it. Do NOT assume a structure, a file location, or a
+next skill.

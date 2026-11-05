@@ -30,8 +30,8 @@ set).
    bash scripts/install.sh
    ```
 
-3. Report success or failure. If installation failed, explain the cause. If the user must restart
-   to see the changes, recommend it.
+3. Report success or failure. If installation failed, explain the cause. If the user must restart to
+   see the changes, recommend it.
 
 ## Notes
 

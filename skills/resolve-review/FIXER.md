@@ -17,9 +17,9 @@ footprint, and the test commands.
 ## Writing Your Return
 
 Write the `NOTE` and `TESTS` fields so that they read as a continuation of the issue entry in the
-report. Match the voice and the level of detail of that entry. The coordinator never reads the
-code, so your text MUST hold every important detail on its own: each file you changed, each test
-you added, and each test command you ran with its result.
+report. Match the voice and the level of detail of that entry. The coordinator never reads the code,
+so your text MUST hold every important detail on its own: each file you changed, each test you
+added, and each test command you ran with its result.
 
 ## Method
 

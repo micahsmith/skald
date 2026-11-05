@@ -98,7 +98,8 @@ Then set the status to `queued`. If any file has changes, add "partial fix may e
 ### 3. Validate
 
 First, find out how tests run. If the project guidance in your context already states the test
-commands, use them. Otherwise, spawn one inexpensive subagent to report:
+commands, use them. Otherwise, spawn one subagent to report. This subagent SHOULD run on a small
+model (such as Haiku) when the harness can choose one. It reports:
 
 - The command that runs the full test suite.
 - The command form that runs a single test file or test case.
@@ -112,9 +113,9 @@ Then spawn one validator per `open` issue. Give each validator:
 - The issue list from step 1, so that the validator can name issues that share a root cause.
 - The test commands. If test runs cannot happen at once, tell the validator to run no tests.
 
-Record each verdict, judgment, risk, and footprint in the triage table as the validator returns.
-The footprint is the list of files the fix touches. Then add a validation line to the issue (see
-"Tracking"). The validation line is the only place in the report that holds the validator's
+Record each verdict, judgment, risk, and footprint in the triage table as the validator returns. The
+footprint is the list of files the fix touches. Then add a validation block to the issue (see
+"Tracking"). The validation block is the only place in the report that holds the validator's
 evidence.
 
 A validator MAY write a temporary test when reading the code cannot settle an issue. Every temporary
@@ -156,21 +157,26 @@ Plan each wave as follows:
    in different waves.
 3. **Fill.** Put at most 4 units that do not conflict into the wave. The other units wait.
 
-Set each issue to `in-progress` before its fixer starts. Give each fixer:
+Set each issue to `in-progress` before its fixer starts. Each fixer SHOULD run on a mid-size model
+(such as Sonnet) when the harness can choose one. Give each fixer:
 
 - The absolute path to [FIXER.md](FIXER.md), which the fixer MUST read first.
 - The report path and the IDs in its unit.
-- The fix to apply to each issue: the proposed solution, the validator's fix, or the option the
-  user chose.
+- The fix to apply to each issue: the proposed solution, the validator's fix, or the option the user
+  chose.
 - The footprint of the unit, plus the "partial fix may exist" note if the row has one.
 - The test commands. If test runs cannot happen at once, tell the fixer to run no tests.
 
-Update the triage table as each fixer returns, and add a resolution line to each issue that
-becomes `fixed` or `blocked` (see "Tracking"). Handle a `blocked` return by its cause:
+Update the triage table as each fixer returns, and add a resolution block to each issue that becomes
+`fixed` or `blocked` (see "Tracking"). Handle a `blocked` return by its cause:
 
 - **The fix needs a file outside the footprint.** Add the file to the footprint. Set the issue to
-  `queued` for a later wave.
-- **Any other cause.** Keep the status `blocked`, and include the issue in the decision batch.
+  `queued` for a later wave. The next fixer is a fresh attempt, not a retry, so it runs on the
+  mid-size model.
+- **Any other cause.** Keep the status `in-progress`, and retry the unit once on the session default
+  model. Include the first fixer's `NOTE` in the retry prompt. Write the resolution block only after
+  the retry returns. If the retry also returns `blocked`, set the status to `blocked`, and include
+  the issue in the decision batch.
 
 Run waves until no `queued` issue remains.
 
@@ -183,24 +189,24 @@ The batch has three parts. Omit any empty part.
 
 1. **Approvals.** Every `mechanical` issue with `high` risk. State the fix and the risk for each.
    The user MAY approve them all with one reply.
-2. **Choices.** Every `choice` issue. Present each choice in this shape, so that the user can
-   see that the options exclude each other:
+2. **Choices.** Every `choice` issue. Present each choice in this shape, so that the user can see
+   that the options exclude each other:
 
    ```markdown
-   **COR-2** Cache never expires. Pick one:
+   **LOG-2** Cache never expires. Pick one:
    - **A.** Expire each entry after a TTL. Simple, but stale entries live until the TTL ends.
    - **B.** Cap the map with an LRU. Bounded memory, but hot entries can be evicted under load.
 
    Recommend A, because every caller already passes a timestamp.
    ```
 
-   Letter ONLY options that exclude each other. Never letter steps that must all happen. Each
-   option states the fix and its trade-off.
+   Letter ONLY options that exclude each other. Never letter steps that must all happen. Each option
+   states the fix and its trade-off.
 3. **Not Fixed.** Every `rejected`, `unclear`, and `blocked` issue, each with its reason. The user
    MAY override any of them.
 
-Apply the answers. An approved or decided issue becomes `queued`, with the decision in its note.
-A declined issue becomes `skipped`. Fix the new `queued` issues in further waves.
+Apply the answers. An approved or decided issue becomes `queued`, with the decision in its note. A
+declined issue becomes `skipped`. Fix the new `queued` issues in further waves.
 
 Discuss the `design` issues last, one at a time. Each discussion ends with a decision (`queued`) or
 with `skipped`.
@@ -210,9 +216,9 @@ with `skipped`.
 Fixers run targeted tests during the waves. After the last wave, run the full test suite yourself.
 
 Attribute each failure to an issue by footprint: match the failing file or test to the files each
-fixer touched. Send the failure back to one fixer for that issue. If the second attempt also fails,
-set the issue to `blocked`. A failure that matches no footprint may predate the fixes. Report it to
-the user and leave it alone.
+fixer touched. Send the failure back to one fixer for that issue, on the session default model. If
+the second attempt also fails, set the issue to `blocked`. A failure that matches no footprint may
+predate the fixes. Report it to the user and leave it alone.
 
 If the project has no tests, state that in the final summary.
 
@@ -240,7 +246,7 @@ Add the table as its own section directly after the Summary section of the repor
 | ID | Title | Verdict | Judgment | Risk | Status | Files Touched | Note |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SEC-1 | Query built from raw input | confirmed | mechanical | low | fixed | `db/users.js`, `test/users.test.js` | Regression test added. |
-| COR-2, PERF-1 | Cache never expires | confirmed | choice | medium | awaiting-decision | `cache/store.js` | Options: TTL or LRU. |
+| LOG-2, PERF-1 | Cache never expires | confirmed | choice | medium | awaiting-decision | `cache/store.js` | Options: TTL or LRU. |
 | STY-3 | Unused import | — | — | — | open | — | — |
 ```
 
@@ -248,48 +254,73 @@ Add the table as its own section directly after the Summary section of the repor
   that the fixer changed.
 - **Note** holds what a fresh session needs to continue: the root-cause group, the validator's fix,
   the chosen option, or the reason for a block. Keep each note to one or two sentences. The
-  validation line holds the decisive evidence, so the note MUST NOT repeat it.
+  validation block holds the decisive evidence, so the note MUST NOT repeat it.
 
-### Validation Line
+### Validation Block
 
-Add a validation line to an issue as soon as its validator returns. Write the line as a bullet
-after the last part of the issue: after **Confidence Note** when present, otherwise after
-**Proposed Solution**. The reader then meets the context and the problem before the verdict.
+Add a validation block to an issue as soon as its validator returns. Write the block after the last
+part of the issue: after the last `- **Also reported:**` bullet when present (`merge-review` adds
+these), otherwise after **Confidence Note** when present, otherwise after **Proposed Solution**. The
+reader then meets the context and the problem before the verdict.
 
-The line is a summary, not the validator's full return. It holds the verdict, then one or two
-sentences that name the evidence that decided the verdict: the one guard, caller, or test that
-settled it. When the verdict is `confirmed-alt`, add the fix in one sentence. When the judgment is
-`choice`, add the lettered options and the recommendation, each in one sentence:
+The top bullet holds only the verdict. Sub-bullets hold the rest, each with a fixed label, in this
+order:
+
+| Sub-bullet | Present when | Content |
+| --- | --- | --- |
+| `Evidence` | Always | The validator's `REASON`, cut to one or two sentences that name the guard, caller, or test that decided the verdict. |
+| `Fix` | Verdict is `confirmed-alt` | The validator's `FIX`: the fix to apply, and the fate of the proposed solution. |
+| `Options` | Judgment is `choice` | The validator's `OPTIONS`: lettered fixes that exclude each other, each with its trade-off. An option that is the proposed solution says so. |
+| `Recommend` | Judgment is `choice` | The validator's `RECOMMEND`: the letter and one reason. |
+
+A `rejected` or `unclear` verdict has only `Evidence`. A plain `confirmed` verdict has no `Fix`,
+because the Proposed Solution already holds the fix. Drop the `FIX` field that the validator returns
+in that case.
 
 ```markdown
-- **Validation:** rejected — The guard at `api/users.js:42` returns early when `id` is empty, and
-  a temporary test with an empty ID returned 400.
+- **Validation:** rejected
+  - Evidence: the guard at `api/users.js:42` returns early when `id` is empty, and a temporary test
+    with an empty ID returned 400.
 ```
 
 ```markdown
-- **Validation:** confirmed-alt — `cache/store.js:30` adds entries and nothing removes them. Fix:
-  expire entries in `cache/store.js`. Pick one: (A) a TTL per entry, or (B) an LRU cap. Recommend
-  A, because every caller already passes a timestamp.
+- **Validation:** confirmed-alt
+  - Evidence: `cache/store.js:30` adds entries and nothing removes them.
+  - Fix: expire entries in `cache/store.js`. The proposed solution (clear on restart) is dropped,
+    because the process runs for weeks.
+  - Options: (A) TTL per entry; simple, but stale entries live until the TTL ends. (B) LRU cap;
+    bounded memory, but hot entries can be evicted under load.
+  - Recommend: A, because every caller already passes a timestamp.
 ```
 
-Cut the validator's narrative. Keep the names of the files, lines, and tests that the summary
-cites, so that a reader can check the verdict.
+When the validator replaces or extends the proposed solution, the `Fix` or `Options` sub-bullet MUST
+state what became of the proposed solution. Either the proposal is one of the options, or the
+sub-bullet names the reason it was dropped. You MUST NOT edit or remove the **Proposed Solution**
+field itself.
 
-### Resolution Line
+Cut the validator's narrative. Keep the names of the files, lines, and tests that the summary cites,
+so that a reader can check the verdict.
 
-Add a resolution line to an issue when its status becomes `fixed`, `rejected`, `unclear`, `blocked`,
-or `skipped`. Write the line as a bullet directly after the `**Validation:**` bullet of the issue,
-or in the same place as a validation line if the issue has none. The line holds the status, then
-the detail for that status:
+### Resolution Block
 
-- For `fixed` or `blocked`, the fixer's `NOTE` and `TESTS` fields.
-- For `skipped`, the reason the user gave.
-- For `rejected` or `unclear`, nothing more, because the validation line holds the evidence.
+Add a resolution block to an issue when its status becomes `fixed`, `rejected`, `unclear`,
+`blocked`, or `skipped`. Write the block directly after the validation block of the issue, or in its
+place if the issue has none. The top bullet holds only the status. Sub-bullets hold the detail for
+that status:
+
+| Status | Sub-bullets |
+| --- | --- |
+| `fixed` | `Changed` (the fixer's `FILES`), `Tests` (`TESTS`), `Note` (`NOTE`). |
+| `blocked` | `Reason` (the fixer's `NOTE`), then `Tests` if any ran. |
+| `skipped` | `Reason`: the reason the user gave. |
+| `rejected`, `unclear` | None. The validation block holds the evidence. |
 
 ```markdown
-- **Resolution:** fixed — The query now uses bound parameters. Regression test added in
-  `test/users.test.js`. Tests: `npm test -- test/users.test.js` passed.
+- **Resolution:** fixed
+  - Changed: `cache/store.js`, `test/store.test.js`.
+  - Tests: `npm test -- test/store.test.js` passed.
+  - Note: entries now expire after a TTL; regression test added.
 ```
 
 You MAY rewrite the fixer's text for clarity. You MUST keep every file, test command, and result.
-Replace the line if the status changes later.
+Replace the block if the status changes later.
