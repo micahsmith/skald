@@ -69,7 +69,8 @@ individual focus:
 - Instructions on issue report format and individual focus.
 
 Pass each focus exactly as written below. You MUST NOT add example issues, suspected problems, or
-areas to check. A reviewer given examples searches for those examples and finds little else.
+areas to check. The coordinator has not read the code, so its guesses can bias what a reviewer
+reports.
 
 Each reviewer MUST run the `DIFF_CMD` itself, explore under `WORKDIR`, and return with a report.
 Test files are in scope for every focus. A reviewer MUST NOT leave test files out of the diff it
