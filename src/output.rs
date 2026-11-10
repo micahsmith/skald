@@ -107,6 +107,19 @@ pub fn truncate_text(value: &mut Value) -> bool {
     }
 }
 
+/// Reports whether `text` is what `truncate_text` makes of a longer string.
+pub fn is_truncated(text: &str) -> bool {
+    let Some((end, _)) = text.char_indices().nth(TRUNCATE_AT) else {
+        return false;
+    };
+    let Some(rest) = text[end..].strip_prefix(" ... (truncated, ") else {
+        return false;
+    };
+    rest.strip_suffix(" chars total)")
+        .and_then(|total| total.parse::<usize>().ok())
+        .is_some_and(|total| total > TRUNCATE_AT && !rest.contains(['\n']))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -169,6 +182,17 @@ mod tests {
         let mut value = json!({"edge": "x".repeat(500), "number": 7});
         assert!(!truncate_text(&mut value));
         assert_eq!(value["edge"], "x".repeat(500));
+    }
+
+    #[test]
+    fn truncated_text_is_recognized() {
+        let mut value = json!({"long": "é".repeat(501)});
+        truncate_text(&mut value);
+        assert!(is_truncated(value["long"].as_str().unwrap()));
+        assert!(!is_truncated(&"é".repeat(501)));
+        assert!(!is_truncated(" ... (truncated, 600 chars total)"));
+        let short = format!("{} ... (truncated, 500 chars total)", "x".repeat(500));
+        assert!(!is_truncated(&short));
     }
 
     #[test]

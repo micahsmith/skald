@@ -47,15 +47,23 @@ pub struct Plugin {
     pub status: PluginStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     detail: Option<String>,
+    /// The manifest was read and has no `skaldMinVersion`, as in installs from before the key.
+    #[serde(skip)]
+    pub undeclared_minimum: bool,
 }
 
 impl Plugin {
+    pub fn id(&self) -> Option<&str> {
+        self.id.as_deref()
+    }
+
     fn unidentified(status: PluginStatus, detail: String) -> Self {
         Self {
             id: None,
             min_skald_version: None,
             status,
             detail: Some(detail),
+            undeclared_minimum: false,
         }
     }
 }
@@ -179,10 +187,9 @@ pub fn plugin(plugins_dir: &Path) -> Plugin {
         }
         Err(message) => return Plugin::unidentified(PluginStatus::Unknown, message),
     };
-    let min = installed
-        .install_path
-        .as_deref()
-        .and_then(min_skald_version);
+    let manifest = installed.install_path.as_deref().and_then(read_manifest);
+    let min = manifest.as_ref().and_then(min_skald_version);
+    let undeclared_minimum = manifest.is_some() && min.is_none();
     let (status, detail) = match &min {
         Some(min) => plugin_status(&installed.id, min, &program_version()),
         None => (
@@ -198,12 +205,16 @@ pub fn plugin(plugins_dir: &Path) -> Plugin {
         min_skald_version: min,
         status,
         detail,
+        undeclared_minimum,
     }
 }
 
-fn min_skald_version(install_path: &Path) -> Option<String> {
+fn read_manifest(install_path: &Path) -> Option<Value> {
     let text = std::fs::read_to_string(install_path.join(".claude-plugin/plugin.json")).ok()?;
-    let manifest: Value = serde_json::from_str(&text).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn min_skald_version(manifest: &Value) -> Option<String> {
     manifest["metadata"]["skaldMinVersion"]
         .as_str()
         .map(String::from)

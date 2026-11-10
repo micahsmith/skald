@@ -4,9 +4,17 @@ use serde::Serialize;
 use serde_json::Value;
 
 /// A typed record seen as a flat list of elements, so that records of every kind compare alike.
-pub trait Record {
+pub trait Diffable {
     /// Every element in document order, each element before its children.
     fn elements(&self) -> Vec<Element>;
+
+    /// The id and kind of every element, in the order of `elements`.
+    fn ids(&self) -> Vec<(String, &'static str)> {
+        self.elements()
+            .into_iter()
+            .map(|element| (element.id, element.kind))
+            .collect()
+    }
 }
 
 /// One element of a record. `attributes` holds every compared attribute, `name` and `parent`
@@ -41,7 +49,7 @@ pub struct Diff {
 
 /// Compares two versions element by element, keyed by id. `removed` follows the document order
 /// of `from`; `added` and `changed` follow `to`.
-pub fn diff(from: &impl Record, to: &impl Record) -> Diff {
+pub fn diff(from: &impl Diffable, to: &impl Diffable) -> Diff {
     let from = from.elements();
     let to = to.elements();
     let older: HashMap<&str, &Element> = from
@@ -108,7 +116,7 @@ mod tests {
 
     struct Elements(Vec<Element>);
 
-    impl Record for Elements {
+    impl Diffable for Elements {
         fn elements(&self) -> Vec<Element> {
             self.0.clone()
         }

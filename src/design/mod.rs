@@ -7,6 +7,8 @@ mod render;
 use std::path::Path;
 
 use clap::ValueEnum;
+use clap::builder::PossibleValue;
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -19,16 +21,16 @@ use crate::id;
 use crate::output::{self, Output};
 use crate::repository::RepoContext;
 use crate::serve;
-use crate::store::Store;
+use crate::store::{self, Store};
 use data_model::DataModelRecord;
-use diff::{Diff, Record};
+use diff::{Diff, Diffable};
 use interface::InterfaceRecord;
 use render::DesignHeader;
 
 pub const SUBMIT_HELP: &str = "skald design submit --kind data-model --name <name> --file <path>";
 
 /// Fields a list item may carry. The first four are shown by default.
-const FIELDS: [&str; 7] = [
+pub(crate) const FIELDS: [&str; 7] = [
     "id",
     "name",
     "kind",
@@ -40,7 +42,7 @@ const FIELDS: [&str; 7] = [
 
 const DEFAULT_LIMIT: usize = 50;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     DataModel,
     Interface,
@@ -57,12 +59,42 @@ impl Kind {
     }
 }
 
+impl ValueEnum for Kind {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::DataModel, Self::Interface, Self::Freeform]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        let help = match self {
+            Self::DataModel => "Entities, attributes, and relations",
+            Self::Interface => "Operations, inputs, and outputs",
+            Self::Freeform => "An HTML page with no fixed structure",
+        };
+        Some(PossibleValue::new(self.as_str()).help(help))
+    }
+}
+
+impl FromSql for Kind {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        let text = value.as_str()?;
+        Self::from_str(text, false)
+            .map_err(|_| FromSqlError::Other(format!("unknown design kind `{text}`").into()))
+    }
+}
+
+impl ToSql for Kind {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        self.as_str().to_sql()
+    }
+}
+
 /// A record kind whose submissions are typed, validated, and stored as canonical JSON.
-trait Typed: Record + Serialize + DeserializeOwned {
+trait Typed: Diffable + Serialize + DeserializeOwned {
     type Submission: DeserializeOwned;
 
     /// Validates `submission` and assigns ids to new elements, keeping the ids of `previous`, the
-    /// newest stored record of the same design.
+    /// newest stored record of the same design. Problems are listed in document order, each
+    /// element's own before its children's.
     fn validate(
         submission: &Self::Submission,
         previous: Option<&Self>,
@@ -85,8 +117,8 @@ pub fn run(command: DesignCommand, store: &mut Store, cwd: &Path) -> Result<Outp
             list(store, cwd, limit.unwrap_or(DEFAULT_LIMIT), &fields)
         }
         DesignCommand::Get { id, version, full } => get(store, cwd, &id, version, full),
-        DesignCommand::Diff { id, from, to } => compare(store, cwd, &id, from, to),
-        DesignCommand::Render { id, version, out } => export(store, cwd, &id, version, &out),
+        DesignCommand::Diff { id, from, to } => diff(store, cwd, &id, from, to),
+        DesignCommand::Render { id, version, out } => render(store, cwd, &id, version, &out),
         DesignCommand::Open {
             id,
             version,
@@ -99,7 +131,7 @@ pub fn run(command: DesignCommand, store: &mut Store, cwd: &Path) -> Result<Outp
 /// The newest version of a design, as `submit` needs it.
 struct Newest {
     id: String,
-    kind: String,
+    kind: Kind,
     branch: String,
     number: u32,
     record: Option<String>,
@@ -145,11 +177,8 @@ fn submit(
     let text = read(file)?;
     let (tx, repo) = begin(store, info)?;
     let newest = Newest::find(&tx, &repo.id, name)?;
-    if let Some(newest) = newest
-        .as_ref()
-        .filter(|newest| newest.kind != kind.as_str())
-    {
-        return Err(kind_mismatch(name, &newest.kind, kind));
+    if let Some(newest) = newest.as_ref().filter(|newest| newest.kind != kind) {
+        return Err(kind_mismatch(name, newest.kind, kind));
     }
     let (record, html) = match kind {
         Kind::DataModel => (
@@ -164,19 +193,19 @@ fn submit(
     };
     let (record, html) = (record.as_deref(), html.as_deref());
 
-    let now = now(&tx)?;
-    let (id, branch, version, status) = match newest {
+    let now = store::now(&tx)?;
+    let (id, branch, version, created) = match newest {
         Some(newest) if newest.record.as_deref() == record && newest.html.as_deref() == html => {
-            (newest.id, newest.branch, newest.number, "unchanged")
+            (newest.id, newest.branch, newest.number, false)
         }
         Some(newest) => {
             let version = newest.number + 1;
             insert_version(&tx, &newest.id, version, &repo.id, &now, record, html)?;
-            (newest.id, newest.branch, version, "created")
+            (newest.id, newest.branch, version, true)
         }
         None => {
             let id = insert_design(&tx, &repo, kind, name, &now, record, html)?;
-            (id, repo.branch, 1, "created")
+            (id, repo.branch, 1, true)
         }
     };
     tx.commit()?;
@@ -190,14 +219,14 @@ fn submit(
             "kind": kind.as_str(),
             "version": version,
             "branch": branch,
-            "status": status,
+            "status": if created { "created" } else { "unchanged" },
         }),
     );
     let mut help = vec![
         format!("skald design open {id}"),
         format!("skald design get {id}"),
     ];
-    if status == "created" && version > 1 && kind != Kind::Freeform {
+    if created && version > 1 && kind != Kind::Freeform {
         help.push(format!(
             "skald design diff {id} --from {} --to {version}",
             version - 1
@@ -209,7 +238,8 @@ fn submit(
 /// Decodes and validates `text` against the newest stored record, and returns the canonical
 /// record.
 fn canonical<T: Typed>(text: &str, newest: Option<&Newest>) -> Result<String, SkaldError> {
-    let submission: T::Submission = decode(text).map_err(|problem| rejected(vec![problem]))?;
+    let submission: T::Submission =
+        decode(text, newest.map(|newest| newest.id.as_str())).map_err(rejected)?;
     let previous: Option<T> = newest
         .map(|newest| stored(&newest.id, newest.record.as_deref()))
         .transpose()?;
@@ -227,8 +257,8 @@ fn freeform(html: String) -> Result<String, SkaldError> {
     Ok(html)
 }
 
-fn kind_mismatch(name: &str, stored: &str, submitted: Kind) -> SkaldError {
-    let submitted = submitted.as_str();
+fn kind_mismatch(name: &str, stored: Kind, submitted: Kind) -> SkaldError {
+    let (stored, submitted) = (stored.as_str(), submitted.as_str());
     SkaldError::new(
         "kind-mismatch",
         format!(
@@ -255,7 +285,7 @@ entities[1]:
 /// performance and schema tests use it, through the hidden `skald dev seed` command.
 pub fn seed(store: &mut Store, cwd: &Path, count: usize) -> Result<Output, SkaldError> {
     let (tx, repo) = begin(store, repository(cwd)?)?;
-    let now = now(&tx)?;
+    let now = store::now(&tx)?;
     let (_, existing) = summaries(&tx, &repo.id, 0)?;
     for number in existing + 1..=existing + count {
         let record = canonical::<DataModelRecord>(SEED_RECORD, None)?;
@@ -277,11 +307,6 @@ pub fn seed(store: &mut Store, cwd: &Path, count: usize) -> Result<Output, Skald
         json!({"repository": repo.identity, "designs": count}),
     );
     Ok(Output::new(view))
-}
-
-fn now(tx: &Transaction<'_>) -> Result<String, SkaldError> {
-    let sql = "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')";
-    Ok(tx.query_row(sql, [], |row| row.get(0))?)
 }
 
 /// Inserts a new design with `record` or `html` as its version 1, and returns its id.
@@ -337,7 +362,7 @@ fn list(
         )
         .with_help(format!("Valid fields: {}", FIELDS.join(", "))));
     }
-    let (tx, repo) = begin(store, repository(cwd)?)?;
+    let (tx, repo) = begin_read(store, repository(cwd)?)?;
     let (designs, total) = summaries(&tx, &repo.id, limit)?;
     tx.commit()?;
 
@@ -370,7 +395,7 @@ fn list(
 /// One stored version of a design.
 struct Version {
     name: String,
-    kind: String,
+    kind: Kind,
     branch: String,
     number: u32,
     submitted_at: String,
@@ -386,7 +411,7 @@ impl Version {
         id: &str,
         number: Option<u32>,
     ) -> Result<Self, SkaldError> {
-        let (tx, repo) = begin(store, repository(cwd)?)?;
+        let (tx, repo) = begin_read(store, repository(cwd)?)?;
         let found = tx
             .query_row(
                 "SELECT d.name, d.kind, d.branch, v.number, v.submitted_at, v.record, v.html
@@ -448,7 +473,7 @@ fn get(
         json!({
             "id": id,
             "name": found.name,
-            "kind": found.kind,
+            "kind": found.kind.as_str(),
             "branch": found.branch,
             "version": found.number,
             "submitted_at": found.submitted_at,
@@ -459,7 +484,7 @@ fn get(
 }
 
 /// Writes the rendered page to `out`, or to stdout when `out` is `-`.
-fn export(
+fn render(
     store: &mut Store,
     cwd: &Path,
     id: &str,
@@ -495,15 +520,15 @@ fn export(
 
 /// The rendered page of `version` of design `id`.
 fn page(id: &str, version: &Version) -> Result<String, SkaldError> {
-    let record = match Kind::from_str(&version.kind, false) {
-        Ok(Kind::DataModel) => render::Record::DataModel(stored(id, version.record.as_deref())?),
-        Ok(Kind::Interface) => render::Record::Interface(stored(id, version.record.as_deref())?),
-        _ => {
+    let record = match version.kind {
+        Kind::DataModel => render::Record::DataModel(stored(id, version.record.as_deref())?),
+        Kind::Interface => render::Record::Interface(stored(id, version.record.as_deref())?),
+        Kind::Freeform => {
             return Err(SkaldError::new(
                 "not-renderable",
                 format!(
                     "design `{id}` has kind {}; only data-model and interface designs can be rendered",
-                    version.kind
+                    version.kind.as_str()
                 ),
             )
             .with_help(format!("skald design open {id}")));
@@ -511,7 +536,7 @@ fn page(id: &str, version: &Version) -> Result<String, SkaldError> {
     };
     let header = DesignHeader {
         name: &version.name,
-        kind: &version.kind,
+        kind: version.kind.as_str(),
     };
     Ok(render::render(&header, version.number, &record))
 }
@@ -542,8 +567,8 @@ fn open(
 ) -> Result<Output, SkaldError> {
     // Building the page here reports a missing or unservable design under its own error code,
     // rather than as a server that failed to start.
-    let (number, _) = served(store, cwd, id, version)?;
-    let url = serve::spawn(id, number, idle_timeout)?;
+    let (number, page) = served(store, cwd, id, version)?;
+    let url = serve::spawn(&page, idle_timeout)?;
     let browser = if no_browser {
         "skipped"
     } else {
@@ -557,15 +582,9 @@ fn open(
     Ok(Output::new(view).with_help([format!("skald design get {id} --version {number}")]))
 }
 
-fn compare(
-    store: &mut Store,
-    cwd: &Path,
-    id: &str,
-    from: u32,
-    to: u32,
-) -> Result<Output, SkaldError> {
-    let (tx, repo) = begin(store, repository(cwd)?)?;
-    let found: Option<(String, u32)> = tx
+fn diff(store: &mut Store, cwd: &Path, id: &str, from: u32, to: u32) -> Result<Output, SkaldError> {
+    let (tx, repo) = begin_read(store, repository(cwd)?)?;
+    let found: Option<(Kind, u32)> = tx
         .query_row(
             "SELECT d.kind, max(v.number)
              FROM design d JOIN design_version v ON v.design = d.id
@@ -582,13 +601,16 @@ fn compare(
         )
         .with_help("skald design list"));
     };
-    let diff_of = match Kind::from_str(&kind, false) {
-        Ok(Kind::DataModel) => changes::<DataModelRecord>,
-        Ok(Kind::Interface) => changes::<InterfaceRecord>,
-        _ => {
+    let diff_of = match kind {
+        Kind::DataModel => changes::<DataModelRecord>,
+        Kind::Interface => changes::<InterfaceRecord>,
+        Kind::Freeform => {
             return Err(SkaldError::new(
                 "not-comparable",
-                format!("design `{id}` has kind {kind}, whose versions cannot be compared"),
+                format!(
+                    "design `{id}` has kind {}, whose versions cannot be compared",
+                    kind.as_str()
+                ),
             )
             .with_help(format!("skald design get {id} --version <n>"))
             .with_help(format!("skald design open {id} --version <n>")));
@@ -650,7 +672,7 @@ fn stored<T: DeserializeOwned>(id: &str, record: Option<&str>) -> Result<T, Skal
 pub struct Summary {
     id: String,
     name: String,
-    kind: String,
+    kind: Kind,
     version: i64,
     branch: String,
     created_at: String,
@@ -672,7 +694,7 @@ impl Summary {
         Some(match name {
             "id" => json!(self.id),
             "name" => json!(self.name),
-            "kind" => json!(self.kind),
+            "kind" => json!(self.kind.as_str()),
             "version" => json!(self.version),
             "branch" => json!(self.branch),
             "created_at" => json!(self.created_at),
@@ -681,6 +703,14 @@ impl Summary {
         })
     }
 }
+
+const SUMMARIES_SQL: &str =
+    "SELECT d.id, d.name, d.kind, v.number, d.branch, d.created_at, v.submitted_at
+     FROM design d JOIN design_version v ON v.design = d.id
+     WHERE d.repository = ?1
+       AND v.number = (SELECT max(number) FROM design_version WHERE design = d.id)
+     ORDER BY d.created_at DESC, d.rowid DESC
+     LIMIT ?2";
 
 /// The newest `limit` designs of `repository`, newest first, and the number of designs in total.
 pub fn summaries(
@@ -694,14 +724,7 @@ pub fn summaries(
         |row| row.get(0),
     )?;
     // rowid breaks ties between designs created within the same second.
-    let mut statement = conn.prepare(
-        "SELECT d.id, d.name, d.kind, v.number, d.branch, d.created_at, v.submitted_at
-         FROM design d JOIN design_version v ON v.design = d.id
-         WHERE d.repository = ?1
-           AND v.number = (SELECT max(number) FROM design_version WHERE design = d.id)
-         ORDER BY d.created_at DESC, d.rowid DESC
-         LIMIT ?2",
-    )?;
+    let mut statement = conn.prepare(SUMMARIES_SQL)?;
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let summaries = statement
         .query_map(params![repository, limit], |row| {
@@ -738,6 +761,28 @@ fn begin(store: &mut Store, info: RepoInfo) -> Result<(Transaction<'_>, RepoCont
     Ok((tx, repo))
 }
 
+/// Opens a deferred transaction for a command that only reads. The repository row is inserted on
+/// first sight in a short `IMMEDIATE` transaction of its own, because a deferred transaction that
+/// upgrades to a write fails with SQLITE_BUSY without waiting when another process holds the lock.
+pub fn begin_read(
+    store: &mut Store,
+    info: RepoInfo,
+) -> Result<(Transaction<'_>, RepoContext), SkaldError> {
+    let tx = store.read_transaction()?;
+    let found = RepoContext::find(&tx, info)?;
+    drop(tx);
+    let repo = match found {
+        Ok(repo) => repo,
+        Err(info) => {
+            let tx = store.transaction()?;
+            let repo = RepoContext::find_or_insert(&tx, info)?;
+            tx.commit()?;
+            repo
+        }
+    };
+    Ok((store.read_transaction()?, repo))
+}
+
 fn read(file: &str) -> Result<String, SkaldError> {
     let (text, source) = if file == "-" {
         (std::io::read_to_string(std::io::stdin()), "standard input")
@@ -750,15 +795,59 @@ fn read(file: &str) -> Result<String, SkaldError> {
     })
 }
 
-/// Decodes JSON when the text starts with `{` or `[`, and TOON otherwise.
-fn decode<T: DeserializeOwned>(text: &str) -> Result<T, Problem> {
+/// Decodes JSON when the text starts with `{` or `[`, and TOON otherwise. `id` is the design
+/// that the text is submitted to, when it exists.
+fn decode<T: DeserializeOwned>(text: &str, id: Option<&str>) -> Result<T, Vec<Problem>> {
     let value: Value = if text.trim_start().starts_with(['{', '[']) {
         serde_json::from_str(text).map_err(|err| format!("invalid JSON: {err}"))
     } else {
         toon_format::decode_default(text).map_err(|err| format!("invalid TOON: {err}"))
     }
-    .map_err(invalid_format)?;
-    serde_json::from_value(value).map_err(|err| invalid_format(err.to_string()))
+    .map_err(|message| vec![invalid_format(message)])?;
+    let mut problems = Vec::new();
+    truncated_text(&value, &mut String::new(), id, &mut problems);
+    if !problems.is_empty() {
+        return Err(problems);
+    }
+    serde_json::from_value(value).map_err(|err| vec![invalid_format(err.to_string())])
+}
+
+/// Adds a problem for each string in `value` that `get` cut short, because storing it would lose
+/// the rest of the text.
+fn truncated_text(value: &Value, path: &mut String, id: Option<&str>, problems: &mut Vec<Problem>) {
+    let length = path.len();
+    match value {
+        Value::String(text) if output::is_truncated(text) => {
+            let command = id.map_or_else(
+                || "skald design get <id> --full".to_owned(),
+                |id| format!("skald design get {id} --full"),
+            );
+            problems.push(Problem {
+                path: path.clone(),
+                id: None,
+                code: "truncated-text",
+                message: format!(
+                    "text ends with the marker that `get` adds to long text; read the full text with `{command}`"
+                ),
+            });
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                path.push_str(&format!("/{index}"));
+                truncated_text(item, path, id, problems);
+                path.truncate(length);
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map {
+                path.push('/');
+                path.push_str(&key.replace('~', "~0").replace('/', "~1"));
+                truncated_text(item, path, id, problems);
+                path.truncate(length);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn invalid_format(message: String) -> Problem {
@@ -787,8 +876,27 @@ mod tests {
     use super::data_model::DataModelSubmission;
     use super::*;
 
+    #[test]
+    fn summaries_plan_needs_no_sort() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut store = crate::store::Store::open(dir.path()).unwrap();
+        let tx = store.transaction().unwrap();
+        let mut statement = tx
+            .prepare(&format!("EXPLAIN QUERY PLAN {SUMMARIES_SQL}"))
+            .unwrap();
+        let plan: Vec<String> = statement
+            .query_map(params!["repository", 5], |row| row.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            plan.iter().all(|step| !step.contains("TEMP B-TREE")),
+            "the summaries query sorts in a temporary tree: {plan:?}"
+        );
+    }
+
     fn decoded(text: &str) -> Result<Value, Problem> {
-        decode(text)
+        decode(text, None).map_err(|mut problems| problems.remove(0))
     }
 
     #[test]
@@ -809,17 +917,28 @@ mod tests {
 
     #[test]
     fn a_record_of_the_wrong_shape_is_an_invalid_format_problem() {
-        let problem = decode::<DataModelSubmission>("entities: 3\n").unwrap_err();
+        let problem = decode::<DataModelSubmission>("entities: 3\n", None)
+            .unwrap_err()
+            .remove(0);
         assert_eq!(problem.code, "invalid-format");
-        let problem = decode::<DataModelSubmission>("").unwrap_err();
+        let problem = decode::<DataModelSubmission>("", None)
+            .unwrap_err()
+            .remove(0);
         assert!(problem.message.contains("entities"), "{}", problem.message);
+    }
+
+    #[test]
+    fn kind_names_round_trip() {
+        for kind in Kind::value_variants() {
+            assert_eq!(Kind::from_str(kind.as_str(), false), Ok(*kind));
+        }
     }
 
     #[test]
     fn freeform_design_is_not_renderable() {
         let version = Version {
             name: "sketch".to_owned(),
-            kind: Kind::Freeform.as_str().to_owned(),
+            kind: Kind::Freeform,
             branch: "main".to_owned(),
             number: 1,
             submitted_at: "2026-10-26T16:12:37Z".to_owned(),

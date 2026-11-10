@@ -3,12 +3,12 @@ use std::collections::{HashMap, HashSet};
 use serde_json::{Map, Value};
 
 use super::Problem;
-use super::diff::{self, Record};
+use super::diff::{self, Diffable};
 use crate::id;
 
 /// Every kind of element that a typed record holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Element {
+pub enum ElementKind {
     Entity,
     Field,
     Relation,
@@ -18,7 +18,7 @@ pub enum Element {
     Error,
 }
 
-impl Element {
+impl ElementKind {
     pub fn noun(self) -> &'static str {
         match self {
             Self::Entity => "entity",
@@ -56,6 +56,17 @@ impl Element {
     }
 }
 
+/// The element under validation: its kind, its path, and the id the submission supplied.
+pub struct Site<'a, 'p> {
+    pub element: ElementKind,
+    pub path: &'p str,
+    pub id: Option<&'a str>,
+}
+
+fn pointer_token(key: &str) -> String {
+    key.replace('~', "~0").replace('/', "~1")
+}
+
 /// Collects problems while tracking which ids the submission may keep and which it has used.
 pub struct Check<'a> {
     /// The element kind of every id in the previous version.
@@ -66,12 +77,11 @@ pub struct Check<'a> {
 
 impl<'a> Check<'a> {
     /// `previous` is the newest stored record of the design, whose ids a submission may keep.
-    pub fn new(previous: Option<&impl Record>) -> Self {
+    pub fn new(previous: Option<&impl Diffable>) -> Self {
         let known = previous
-            .map(|record| record.elements())
+            .map(|record| record.ids())
             .unwrap_or_default()
             .into_iter()
-            .map(|element| (element.id, element.kind))
             .collect();
         Self {
             known,
@@ -80,29 +90,31 @@ impl<'a> Check<'a> {
         }
     }
 
-    pub fn report(&mut self, path: &str, id: Option<&str>, code: &'static str, message: String) {
+    /// `site.id` is attached to the problem. `path` is the problem's own path, which differs from
+    /// `site.path` for a child path.
+    pub fn report(&mut self, site: &Site<'a, '_>, path: &str, code: &'static str, message: String) {
         self.problems.push(Problem {
             path: path.to_owned(),
-            id: id.map(str::to_owned),
+            id: site.id.map(str::to_owned),
             code,
             message,
         });
     }
 
-    pub fn id(&mut self, element: Element, supplied: Option<&'a str>, path: &str) {
-        let Some(id) = supplied else { return };
-        let noun = element.noun();
+    pub fn id(&mut self, site: &Site<'a, '_>) {
+        let Some(id) = site.id else { return };
+        let noun = site.element.noun();
         if !self.used.insert(id) {
             self.report(
-                path,
-                supplied,
+                site,
+                site.path,
                 "duplicate-id",
                 format!("id `{id}` is already used by an earlier element"),
             );
         } else if self.known.get(id) != Some(&noun) {
             self.report(
-                path,
-                supplied,
+                site,
+                site.path,
                 "unknown-id",
                 format!(
                     "the newest version of this design has no {noun} with id `{id}`; omit `id` \
@@ -114,40 +126,34 @@ impl<'a> Check<'a> {
 
     pub fn name(
         &mut self,
+        site: &Site<'a, '_>,
         siblings: &mut HashSet<&'a str>,
-        element: Element,
         name: Option<&'a str>,
-        path: &str,
-        id: Option<&str>,
     ) -> String {
         match name {
             Some(name) if !name.trim().is_empty() => {
-                self.unique(siblings, element, name, path, id);
+                self.unique(site, siblings, name);
             }
             _ => self.report(
-                path,
-                id,
+                site,
+                site.path,
                 "missing-name",
-                format!("{} has no name", element.noun()),
+                format!("{} has no name", site.element.noun()),
             ),
         }
         name.unwrap_or_default().to_owned()
     }
 
-    pub fn unique(
-        &mut self,
-        siblings: &mut HashSet<&'a str>,
-        element: Element,
-        name: &'a str,
-        path: &str,
-        id: Option<&str>,
-    ) {
+    pub fn unique(&mut self, site: &Site<'a, '_>, siblings: &mut HashSet<&'a str>, name: &'a str) {
         if !siblings.insert(name) {
             self.report(
-                path,
-                id,
+                site,
+                site.path,
                 "duplicate-name",
-                format!("an earlier {} is already named `{name}`", element.noun()),
+                format!(
+                    "an earlier {} is already named `{name}`",
+                    site.element.noun()
+                ),
             );
         }
     }
@@ -155,36 +161,46 @@ impl<'a> Check<'a> {
     /// Returns `value`, and reports `code` when it is missing or blank.
     pub fn required(
         &mut self,
-        element: Element,
+        site: &Site<'a, '_>,
         attribute: &str,
         code: &'static str,
         value: Option<&str>,
-        path: &str,
-        id: Option<&str>,
     ) -> String {
         let value = value.unwrap_or_default();
         if value.trim().is_empty() {
-            let message = format!("{} has no {attribute}", element.noun());
-            self.report(path, id, code, message);
+            let message = format!("{} has no {attribute}", site.element.noun());
+            self.report(site, site.path, code, message);
         }
         value.to_owned()
     }
 
-    pub fn unknown_keys(
-        &mut self,
-        unknown: &Map<String, Value>,
-        path: &str,
-        id: Option<&str>,
-        noun: &str,
-    ) {
+    pub fn unknown_keys(&mut self, site: &Site<'a, '_>, unknown: &Map<String, Value>) {
+        let noun = site.element.noun();
+        let article = if noun.starts_with(['a', 'e', 'i', 'o', 'u']) {
+            "an"
+        } else {
+            "a"
+        };
         for key in unknown.keys() {
-            let pointer = key.replace('~', "~0").replace('/', "~1");
             self.report(
-                &format!("{path}/{pointer}"),
-                id,
+                site,
+                &format!("{}/{}", site.path, pointer_token(key)),
                 "unknown-key",
-                format!("`{key}` is not a key of {noun}"),
+                format!("`{key}` is not a key of {article} {noun}"),
             );
+        }
+    }
+
+    /// Reports the unknown keys of a whole record, which has no element. `noun` includes its
+    /// article.
+    pub fn unknown_record_keys(&mut self, unknown: &Map<String, Value>, noun: &str) {
+        for key in unknown.keys() {
+            self.problems.push(Problem {
+                path: format!("/{}", pointer_token(key)),
+                id: None,
+                code: "unknown-key",
+                message: format!("`{key}` is not a key of {noun}"),
+            });
         }
     }
 

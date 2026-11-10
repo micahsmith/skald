@@ -1,12 +1,10 @@
 use rand::RngExt;
-use rand::rand_core::UnwrapErr;
-use rand::rngs::SysRng;
 
 const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 
-/// `prefix` followed by eleven characters from `[a-z0-9]`, drawn from the OS random source.
+/// `prefix` followed by eleven characters from `[a-z0-9]`, drawn from a generator seeded from the OS.
 pub fn new(prefix: char) -> String {
-    let mut rng = UnwrapErr(SysRng);
+    let mut rng = rand::rng();
     std::iter::once(prefix)
         .chain((0..11).map(|_| char::from(ALPHABET[rng.random_range(0..ALPHABET.len())])))
         .collect()

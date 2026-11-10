@@ -9,6 +9,7 @@ use crate::adapter::{self, Marker};
 use crate::error::SkaldError;
 use crate::output::Output;
 use crate::paths;
+use crate::store;
 
 const RUNTIME: &str = "claude-code";
 const HOOK_SUFFIX: &str = " hook claude-code";
@@ -61,7 +62,8 @@ enum Status {
 pub fn run(no_plugin: bool) -> Result<Output, SkaldError> {
     let command = hook_command()?;
     let settings = paths::claude_config_dir()?.join("settings.json");
-    let marker = adapter::marker_path(&paths::data_dir()?, RUNTIME);
+    let data_dir = paths::data_dir()?;
+    let marker = adapter::marker_path(&data_dir, RUNTIME);
 
     let hook_step = Step::at("hook", &settings, install_hook(&settings, &command));
     let marker_step = if hook_step.status == Status::Failed {
@@ -70,7 +72,9 @@ pub fn run(no_plugin: bool) -> Result<Output, SkaldError> {
         Step::at(
             "marker",
             &marker,
-            write_marker(&marker, &command, &settings),
+            paths::create_data_dir(&data_dir)
+                .map_err(|err| format!("cannot create {}: {err}", data_dir.display()))
+                .and_then(|()| write_marker(&marker, &command, &settings)),
         )
     };
     let plugin_step = if no_plugin {
@@ -93,7 +97,8 @@ pub fn run(no_plugin: bool) -> Result<Output, SkaldError> {
         .with_exit_code(u8::from(failed)))
 }
 
-/// The bare name when `skald` on `PATH` is this executable, otherwise this executable's path.
+/// The path of `skald` on `PATH` when it is this executable, otherwise this executable's path.
+/// Symlinks in the `PATH` match stay unresolved.
 fn hook_command() -> Result<String, SkaldError> {
     let exe = std::env::current_exe().map_err(|err| {
         SkaldError::new(
@@ -101,16 +106,20 @@ fn hook_command() -> Result<String, SkaldError> {
             format!("cannot find the skald executable: {err}"),
         )
     })?;
-    if paths::find_executable("skald").is_some_and(|found| same_file(&found, &exe)) {
-        return Ok(format!("skald{HOOK_SUFFIX}"));
-    }
-    let exe = exe.to_str().ok_or_else(|| {
+    let program = match paths::find_executable("skald") {
+        Some(found) if same_file(&found, &exe) => std::path::absolute(found).unwrap_or(exe),
+        _ => exe,
+    };
+    let program = program.to_str().ok_or_else(|| {
         SkaldError::new(
             "no-executable-path",
-            format!("the skald executable path {} is not UTF-8", exe.display()),
+            format!(
+                "the skald executable path {} is not UTF-8",
+                program.display()
+            ),
         )
     })?;
-    Ok(format!("{}{HOOK_SUFFIX}", shell_word(exe)))
+    Ok(format!("{}{HOOK_SUFFIX}", shell_word(program)))
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -162,32 +171,55 @@ fn merge_hook(settings: &mut Value, command: &str) -> Result<Status, &'static st
         .or_insert_with(|| json!([]))
         .as_array_mut()
         .ok_or("`hooks.SessionStart` is not a JSON array")?;
-    let skald: Vec<usize> = (0..entries.len())
-        .filter(|&index| is_skald_entry(&entries[index]))
-        .collect();
-    match skald.as_slice() {
-        [] => {
-            entries.push(entry);
-            Ok(Status::Installed)
+    let before = entries.clone();
+    let mut kept: Vec<Value> = Vec::with_capacity(before.len() + 1);
+    let mut position = None;
+    for mut existing in before.iter().cloned() {
+        let Some(hooks) = existing["hooks"].as_array_mut() else {
+            kept.push(existing);
+            continue;
+        };
+        let count = hooks.len();
+        hooks.retain(|hook| !is_skald_hook(hook["command"].as_str().unwrap_or(""), command));
+        if hooks.len() < count {
+            position.get_or_insert(kept.len());
         }
-        [only] if entries[*only] == entry => Ok(Status::Unchanged),
-        [first, duplicates @ ..] => {
-            for &index in duplicates.iter().rev() {
-                entries.remove(index);
-            }
-            entries[*first] = entry;
-            Ok(Status::Repaired)
+        if !hooks.is_empty() {
+            kept.push(existing);
         }
     }
+    let found = position.is_some();
+    kept.insert(position.unwrap_or(kept.len()), entry);
+    if kept == before {
+        return Ok(Status::Unchanged);
+    }
+    *entries = kept;
+    Ok(if found {
+        Status::Repaired
+    } else {
+        Status::Installed
+    })
 }
 
-fn is_skald_entry(entry: &Value) -> bool {
-    entry["hooks"].as_array().is_some_and(|hooks| {
-        hooks.iter().any(|hook| {
-            hook["command"]
-                .as_str()
-                .is_some_and(|command| command.ends_with(HOOK_SUFFIX))
-        })
+/// A hook is skald's when it is the command being installed, or when it runs a file named `skald`
+/// as `<program> hook claude-code`. An older install may have recorded a different path.
+fn is_skald_hook(hook_command: &str, command: &str) -> bool {
+    if hook_command == command {
+        return true;
+    }
+    let Some(program) = hook_command.strip_suffix(HOOK_SUFFIX) else {
+        return false;
+    };
+    let word = match program.strip_prefix('\'') {
+        Some(quoted) => quoted
+            .strip_suffix('\'')
+            .map(|inner| inner.replace(r"'\''", "'")),
+        None => program.split_whitespace().next().map(str::to_owned),
+    };
+    word.is_some_and(|word| {
+        Path::new(&word)
+            .file_name()
+            .is_some_and(|name| name == "skald")
     })
 }
 
@@ -221,12 +253,8 @@ fn write_marker(path: &Path, command: &str, settings: &Path) -> Result<Status, S
 }
 
 fn now() -> rusqlite::Result<String> {
-    // The store's timestamps come from SQLite, so the marker's do too, in the same format.
-    rusqlite::Connection::open_in_memory()?.query_row(
-        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
-        [],
-        |row| row.get(0),
-    )
+    // The marker's timestamps must use the store's format, which only `store::now` spells.
+    store::now(&rusqlite::Connection::open_in_memory()?)
 }
 
 fn install_plugin(plugins_dir: &Path) -> Step {
@@ -291,12 +319,29 @@ fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 }
 
 fn replace(temp: &Path, target: &Path, contents: &str) -> std::io::Result<()> {
-    fs::write(temp, contents)?;
+    create_private(temp, contents)?;
     // Settings may hold secrets, so a file the user restricted stays restricted.
     if let Ok(existing) = fs::metadata(target) {
         fs::set_permissions(temp, existing.permissions())?;
     }
     fs::rename(temp, target)
+}
+
+#[cfg(unix)]
+fn create_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(contents.as_bytes())
+}
+
+#[cfg(not(unix))]
+fn create_private(path: &Path, contents: &str) -> std::io::Result<()> {
+    fs::write(path, contents)
 }
 
 #[cfg(test)]
@@ -362,6 +407,34 @@ mod tests {
             settings["hooks"]["SessionStart"],
             json!([skald_entry(COMMAND)])
         );
+    }
+
+    #[test]
+    fn hooks_sharing_an_entry_with_skald_survive() {
+        let load_env = json!({"type": "command", "command": "~/bin/load-env.sh"});
+        let shared = json!({
+            "hooks": [load_env, {"type": "command", "command": "/old/skald hook claude-code"}]
+        });
+        let mut settings = json!({"hooks": {"SessionStart": [shared]}});
+        assert_eq!(merge_hook(&mut settings, COMMAND), Ok(Status::Repaired));
+        assert_eq!(
+            settings["hooks"]["SessionStart"],
+            json!([skald_entry(COMMAND), {"hooks": [load_env]}])
+        );
+        assert_eq!(merge_hook(&mut settings, COMMAND), Ok(Status::Unchanged));
+    }
+
+    #[test]
+    fn only_hooks_that_run_a_file_named_skald_are_skald_hooks() {
+        assert!(is_skald_hook("skald hook claude-code", COMMAND));
+        assert!(is_skald_hook("/old/skald hook claude-code", COMMAND));
+        assert!(is_skald_hook(
+            "'/Users/ada/App Support/skald' hook claude-code",
+            COMMAND
+        ));
+        assert!(is_skald_hook(COMMAND, COMMAND));
+        assert!(!is_skald_hook("other-tool hook claude-code", COMMAND));
+        assert!(!is_skald_hook("skald hook other", COMMAND));
     }
 
     #[test]

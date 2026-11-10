@@ -3,9 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::error::SkaldError;
 
 pub fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .filter(|home| !home.is_empty())
-        .map(PathBuf::from)
+    env_dir("HOME")
 }
 
 fn env_dir(var: &str) -> Option<PathBuf> {
@@ -25,6 +23,16 @@ pub fn data_dir() -> Result<PathBuf, SkaldError> {
             )
             .with_help("SKALD_HOME=<path> skald")
         })
+}
+
+/// Creates `dir` and any missing parents. On Unix, each directory this call creates gets mode
+/// 0700; a directory that already exists keeps its mode.
+pub fn create_data_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
 }
 
 /// `$CLAUDE_CONFIG_DIR` when set, otherwise `~/.claude`.

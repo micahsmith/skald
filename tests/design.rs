@@ -4,26 +4,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use assert_cmd::assert::OutputAssertExt;
-use common::Sandbox;
+use common::{INTERFACE_TOON, MODEL_TOON, ORIGIN, Sandbox, keys, submit};
 use rusqlite::Connection;
 use serde_json::{Value, json};
-
-const ORIGIN: &str = "https://github.com/acme/orders.git";
-
-/// The data-model example from the plan's global decision anchors.
-const MODEL_TOON: &str = "\
-entities[2]:
-  - name: Order
-    description: A customer order
-    fields[2]{name,type,nullable}:
-      id,uuid,false
-      total,decimal,false
-    relations[1]{target,cardinality,name}:
-      Customer,one,customer
-  - name: Customer
-    fields[1]{name,type,nullable}:
-      id,uuid,false
-";
 
 fn model_json() -> Value {
     json!({
@@ -45,26 +28,6 @@ fn model_json() -> Value {
     })
 }
 
-/// An interface record with two operations, the second without a description.
-const INTERFACE_TOON: &str = "\
-operations[2]:
-  - name: createOrder
-    description: Creates an order for a customer
-    inputs[1]{name,type,nullable}:
-      customer_id,uuid,false
-    outputs[1]{name,type,nullable}:
-      order,Order,false
-    errors[1]{name,condition}:
-      CustomerNotFound,no customer has customer_id
-  - name: getOrder
-    inputs[1]{name,type,nullable}:
-      order_id,uuid,false
-    outputs[1]{name,type,nullable}:
-      order,Order,false
-    errors[1]{name,condition}:
-      OrderNotFound,no order has order_id
-";
-
 fn interface_json() -> Value {
     json!({
         "operations": [
@@ -85,10 +48,6 @@ fn interface_json() -> Value {
     })
 }
 
-fn submit(sandbox: &Sandbox, dir: &Path, name: &str, file: &Path) -> Value {
-    sandbox.json(dir, &submit_args(name, file))
-}
-
 fn submit_args<'a>(name: &'a str, file: &'a Path) -> [&'a str; 8] {
     submit_kind_args("data-model", name, file)
 }
@@ -101,8 +60,7 @@ fn submit_kind_args<'a>(kind: &'a str, name: &'a str, file: &'a Path) -> [&'a st
 }
 
 fn submit_json(sandbox: &Sandbox, dir: &Path, name: &str, record: &Value) -> Value {
-    let file = sandbox.file(&format!("{name}.json"), &record.to_string());
-    submit(sandbox, dir, name, &file)
+    submit(sandbox, dir, "data-model", name, &record.to_string())
 }
 
 /// Submits `record` as JSON, asserts that it is rejected, and returns the error output.
@@ -131,8 +89,7 @@ fn diff(sandbox: &Sandbox, dir: &Path, id: &str, from: u32, to: u32) -> Value {
 
 /// Submits the example record as version 1 of `orders` and returns its id and stored record.
 fn first_version(sandbox: &Sandbox, dir: &Path) -> (String, Value) {
-    let file = sandbox.file("model.toon", MODEL_TOON);
-    let id = id_of(&submit(sandbox, dir, "orders", &file)).to_owned();
+    let id = id_of(&submit(sandbox, dir, "data-model", "orders", MODEL_TOON)).to_owned();
     let record = get(sandbox, dir, &id)["record"].clone();
     (id, record)
 }
@@ -187,14 +144,6 @@ fn without_ids(value: &Value, seen: &mut HashMap<String, usize>) -> Value {
     }
 }
 
-fn keys(item: &Value) -> Vec<&str> {
-    item.as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect()
-}
-
 fn store_count(sandbox: &Sandbox, table: &str) -> i64 {
     Connection::open(sandbox.store_path())
         .unwrap()
@@ -208,9 +157,7 @@ fn store_count(sandbox: &Sandbox, table: &str) -> i64 {
 fn toon_submission_returns_id_and_version_1() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("model.toon", MODEL_TOON);
-
-    let submitted = submit(&sandbox, &repo, "orders", &file);
+    let submitted = submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON);
     let design = &submitted["design"];
     let id = id_of(&submitted);
     assert!(id.starts_with('d') && is_id(id), "id: {id}");
@@ -232,8 +179,7 @@ fn toon_submission_returns_id_and_version_1() {
 fn get_prints_the_stored_record_with_assigned_ids_in_toon_and_json() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("model.toon", MODEL_TOON);
-    let id = id_of(&submit(&sandbox, &repo, "orders", &file)).to_owned();
+    let id = id_of(&submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON)).to_owned();
 
     let assert = sandbox
         .cmd_in(&repo)
@@ -291,11 +237,16 @@ fn get_prints_the_stored_record_with_assigned_ids_in_toon_and_json() {
 fn json_submission_equals_the_toon_submission() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let toon = sandbox.file("model.toon", MODEL_TOON);
-    let json = sandbox.file("model.json", &model_json().to_string());
 
-    let from_toon = id_of(&submit(&sandbox, &repo, "orders", &toon)).to_owned();
-    let from_json = id_of(&submit(&sandbox, &repo, "orders-json", &json)).to_owned();
+    let from_toon = id_of(&submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON)).to_owned();
+    let from_json = id_of(&submit(
+        &sandbox,
+        &repo,
+        "data-model",
+        "orders-json",
+        &model_json().to_string(),
+    ))
+    .to_owned();
     let toon_record = &get(&sandbox, &repo, &from_toon)["record"];
     let json_record = &get(&sandbox, &repo, &from_json)["record"];
     assert_ne!(toon_record, json_record, "ids differ before replacement");
@@ -411,12 +362,9 @@ fn undecodable_file_is_an_invalid_format_problem() {
 fn nullable_defaults_to_false() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file(
-        "model.toon",
-        "entities[1]:\n  - name: Order\n    fields[1]{name,type}:\n      id,uuid\n",
-    );
+    let toon = "entities[1]:\n  - name: Order\n    fields[1]{name,type}:\n      id,uuid\n";
 
-    let id = id_of(&submit(&sandbox, &repo, "orders", &file)).to_owned();
+    let id = id_of(&submit(&sandbox, &repo, "data-model", "orders", toon)).to_owned();
     let field = &get(&sandbox, &repo, &id)["record"]["entities"][0]["fields"][0];
     assert_eq!(field["nullable"], false);
 }
@@ -425,9 +373,7 @@ fn nullable_defaults_to_false() {
 fn relation_target_resolves_to_the_entity_id() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("model.toon", MODEL_TOON);
-
-    let id = id_of(&submit(&sandbox, &repo, "orders", &file)).to_owned();
+    let id = id_of(&submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON)).to_owned();
     let entities = &get(&sandbox, &repo, &id)["record"]["entities"];
     assert_eq!(entities[1]["name"], "Customer");
     assert_eq!(entities[0]["relations"][0]["target"], entities[1]["id"]);
@@ -486,9 +432,8 @@ fn kind_must_be_known() {
 fn list_shows_four_fields_by_default() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("model.toon", MODEL_TOON);
-    submit(&sandbox, &repo, "orders", &file);
-    submit(&sandbox, &repo, "billing", &file);
+    submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON);
+    submit(&sandbox, &repo, "data-model", "billing", MODEL_TOON);
 
     let list = sandbox.json(&repo, &["design", "list"]);
     assert_eq!(list["count"], "2 of 2 total");
@@ -548,7 +493,7 @@ fn empty_list_is_explicit() {
         .find(|line| line.starts_with("note: "))
         .unwrap_or_else(|| panic!("no note in:\n{stdout}"));
     assert!(note.contains("0 designs"), "note: {note}");
-    assert!(note.contains(ORIGIN), "note: {note}");
+    assert!(note.contains("github.com/acme/orders"), "note: {note}");
 }
 
 #[test]
@@ -559,8 +504,14 @@ fn long_description_is_truncated_with_a_size_hint() {
     let record = json!({
         "entities": [{"name": "Order", "description": description, "fields": []}]
     });
-    let file = sandbox.file("model.json", &record.to_string());
-    let id = id_of(&submit(&sandbox, &repo, "orders", &file)).to_owned();
+    let id = id_of(&submit(
+        &sandbox,
+        &repo,
+        "data-model",
+        "orders",
+        &record.to_string(),
+    ))
+    .to_owned();
 
     let short = get(&sandbox, &repo, &id);
     let text = short["record"]["entities"][0]["description"]
@@ -585,12 +536,40 @@ fn long_description_is_truncated_with_a_size_hint() {
 }
 
 #[test]
+fn resubmitting_truncated_text_is_rejected() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    let record = json!({
+        "entities": [{"name": "Order", "description": "x".repeat(800), "fields": []}]
+    });
+    let id = id_of(&submit(
+        &sandbox,
+        &repo,
+        "data-model",
+        "orders",
+        &record.to_string(),
+    ))
+    .to_owned();
+
+    let mut edited = get(&sandbox, &repo, &id)["record"].clone();
+    edited["entities"][0]["name"] = json!("Purchase");
+    let error = rejected_as(&sandbox, &repo, "orders", &edited);
+
+    assert_eq!(codes(&error["problems"]), ["truncated-text"]);
+    assert_eq!(error["problems"][0]["path"], "/entities/0/description");
+    let message = error["problems"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&format!("skald design get {id} --full")),
+        "{message}"
+    );
+}
+
+#[test]
 fn design_is_visible_from_another_worktree() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
     let worktree = sandbox.worktree(&repo, "feature-x");
-    let file = sandbox.file("model.toon", MODEL_TOON);
-    let id = id_of(&submit(&sandbox, &repo, "orders", &file)).to_owned();
+    let id = id_of(&submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON)).to_owned();
 
     let list = sandbox.json(&worktree, &["design", "list"]);
     assert_eq!(list["count"], "1 of 1 total");
@@ -626,13 +605,36 @@ fn design_commands_need_a_repository() {
 }
 
 #[test]
+fn design_commands_report_git_refusing_the_repository() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+
+    let output = sandbox
+        .cmd_in(&repo)
+        .args(["design", "list", "--json"])
+        .env("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+        .output()
+        .unwrap();
+    let error: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "stdout:\n{error:#}");
+    assert_eq!(error["error"]["code"], "git-failed");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("dubious ownership"),
+        "{error:#}"
+    );
+}
+
+#[test]
 fn home_view_lists_the_newest_designs() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("model.toon", MODEL_TOON);
     let names = ["d1", "d2", "d3", "d4", "d5", "d6", "d7"];
     for name in names {
-        submit(&sandbox, &repo, name, &file);
+        submit(&sandbox, &repo, "data-model", name, MODEL_TOON);
     }
 
     let home = sandbox.json(&repo, &[]);
@@ -899,20 +901,21 @@ fn diff_is_symmetric_in_kind() {
     );
 }
 
-fn submit_interface(sandbox: &Sandbox, dir: &Path, name: &str, file: &Path) -> Value {
-    sandbox.json(dir, &submit_kind_args("interface", name, file))
-}
-
 fn submit_interface_json(sandbox: &Sandbox, dir: &Path, name: &str, record: &Value) -> Value {
-    let file = sandbox.file(&format!("{name}.json"), &record.to_string());
-    submit_interface(sandbox, dir, name, &file)
+    submit(sandbox, dir, "interface", name, &record.to_string())
 }
 
 /// Submits the interface example as version 1 of `orders-api` and returns its id and stored
 /// record.
 fn first_interface_version(sandbox: &Sandbox, dir: &Path) -> (String, Value) {
-    let file = sandbox.file("api.toon", INTERFACE_TOON);
-    let id = id_of(&submit_interface(sandbox, dir, "orders-api", &file)).to_owned();
+    let id = id_of(&submit(
+        sandbox,
+        dir,
+        "interface",
+        "orders-api",
+        INTERFACE_TOON,
+    ))
+    .to_owned();
     let record = get(sandbox, dir, &id)["record"].clone();
     (id, record)
 }
@@ -939,9 +942,7 @@ fn assert_id(value: &Value, prefix: char) {
 fn interface_submission_returns_id_and_version_1() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let file = sandbox.file("api.toon", INTERFACE_TOON);
-
-    let submitted = submit_interface(&sandbox, &repo, "orders-api", &file);
+    let submitted = submit(&sandbox, &repo, "interface", "orders-api", INTERFACE_TOON);
     let design = &submitted["design"];
     let id = id_of(&submitted).to_owned();
     assert_id(&design["id"], 'd');
@@ -1001,9 +1002,14 @@ fn interface_submission_returns_id_and_version_1() {
 fn json_and_toon_interface_records_are_equal() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let toon = sandbox.file("api.toon", INTERFACE_TOON);
-
-    let from_toon = id_of(&submit_interface(&sandbox, &repo, "api-toon", &toon)).to_owned();
+    let from_toon = id_of(&submit(
+        &sandbox,
+        &repo,
+        "interface",
+        "api-toon",
+        INTERFACE_TOON,
+    ))
+    .to_owned();
     let from_json = submit_interface_json(&sandbox, &repo, "api-json", &interface_json());
     let toon_record = &get(&sandbox, &repo, &from_toon)["record"];
     let json_record = &get(&sandbox, &repo, id_of(&from_json))["record"];
@@ -1098,4 +1104,48 @@ fn list_mixes_kinds() {
         .map(|item| item["kind"].as_str().unwrap())
         .collect();
     assert_eq!(kinds, ["interface", "data-model"]);
+}
+
+#[test]
+fn designs_survive_switching_origin_between_https_and_ssh() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    submit(&sandbox, &repo, "data-model", "orders", MODEL_TOON);
+
+    sandbox.git(
+        &repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "git@github.com:acme/orders.git",
+        ],
+    );
+
+    let list = sandbox.json(&repo, &["design", "list"]);
+    assert_eq!(list["count"], "1 of 1 total");
+}
+
+#[test]
+fn design_name_must_be_one_short_token() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    let file = sandbox.file("model.toon", MODEL_TOON);
+
+    for name in ["bad\nname", "bad name", "", "_lead", &"a".repeat(65)] {
+        let (code, error) = sandbox.json_with_code(&repo, &submit_args(name, &file));
+        assert_eq!(code, 2, "name {name:?}, stdout:\n{error:#}");
+        assert_eq!(error["error"]["code"], "invalid-value", "name {name:?}");
+    }
+    let list = sandbox.json(&repo, &["design", "list"]);
+    assert!(
+        list["designs"]
+            .as_array()
+            .is_none_or(|designs| designs.is_empty())
+    );
+
+    let longest = "a".repeat(63) + "-";
+    let (code, accepted) = sandbox.json_with_code(&repo, &submit_args(&longest, &file));
+    assert_eq!(code, 0, "stdout:\n{accepted:#}");
+    assert_eq!(accepted["design"]["name"], longest.as_str());
 }

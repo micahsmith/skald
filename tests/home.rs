@@ -3,11 +3,9 @@ mod common;
 use std::collections::BTreeMap;
 
 use assert_cmd::assert::OutputAssertExt;
-use common::Sandbox;
+use common::{ORIGIN, Sandbox};
 use rusqlite::Connection;
 use serde_json::Value;
-
-const ORIGIN: &str = "https://github.com/acme/orders.git";
 
 fn repository_rows(sandbox: &Sandbox) -> BTreeMap<String, String> {
     let conn = Connection::open(sandbox.store_path()).unwrap();
@@ -22,12 +20,33 @@ fn repository_rows(sandbox: &Sandbox) -> BTreeMap<String, String> {
 }
 
 #[test]
-fn identity_is_the_origin_url() {
+fn identity_is_the_normalized_origin_url() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
 
     let home = sandbox.json(&repo, &[]);
-    assert_eq!(home["repository"]["identity"], ORIGIN);
+    assert_eq!(home["repository"]["identity"], "github.com/acme/orders");
+}
+
+#[test]
+fn identity_omits_credentials_from_the_origin_url() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin("https://alice:ghp_SECRET@github.com/acme/orders.git");
+
+    let home = sandbox.json(&repo, &[]);
+    assert_eq!(home["repository"]["identity"], "github.com/acme/orders");
+    let list = sandbox
+        .cmd_in(&repo)
+        .args(["design", "list"])
+        .output()
+        .unwrap();
+    let list = String::from_utf8_lossy(&list.stdout).into_owned();
+    assert!(list.contains("github.com/acme/orders"), "{list}");
+    assert!(!list.contains("ghp_SECRET"), "{list}");
+    assert!(!home.to_string().contains("ghp_SECRET"), "{home}");
+    let rows = repository_rows(&sandbox);
+    assert_eq!(rows.len(), 1);
+    assert!(rows.contains_key("github.com/acme/orders"), "{rows:?}");
 }
 
 #[test]
@@ -128,9 +147,9 @@ fn default_branch_is_stored_on_first_sight() {
     sandbox.cmd_in(&tracked).assert().success();
 
     let rows = repository_rows(&sandbox);
-    assert_eq!(rows["https://github.com/acme/tracked.git"], "trunk");
-    assert_eq!(rows["https://github.com/acme/untracked.git"], "main");
-    assert_eq!(rows["https://github.com/acme/legacy.git"], "master");
+    assert_eq!(rows["github.com/acme/tracked"], "trunk");
+    assert_eq!(rows["github.com/acme/untracked"], "main");
+    assert_eq!(rows["github.com/acme/legacy"], "master");
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
+use std::net::IpAddr;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tiny_http::{Header, Response, Server};
@@ -8,6 +9,8 @@ use tiny_http::{Header, Response, Server};
 use crate::error::SkaldError;
 
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
+
+const LAUNCHER_WAIT: Duration = Duration::from_secs(2);
 
 /// `skald serve` prints this before the URL, and `design open` reads it back.
 const URL_PREFIX: &str = "url: ";
@@ -36,43 +39,75 @@ pub fn serve(
     let idle = Duration::from_secs(idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT));
     let html = Header::from_bytes("Content-Type", "text/html; charset=utf-8")
         .expect("the header is valid");
+    // Omitting `allow-same-origin` gives the page an opaque origin, so its scripts cannot reach
+    // cookies or storage of other servers on 127.0.0.1.
+    let sandbox = Header::from_bytes(
+        "Content-Security-Policy",
+        "sandbox allow-scripts allow-forms allow-popups",
+    )
+    .expect("the header is valid");
     while let Some(request) = server
         .recv_timeout(idle)
         .map_err(|err| failed(format!("cannot accept a request: {err}")))?
     {
-        let response = if is_page(request.url()) {
+        let foreign_host = request
+            .headers()
+            .iter()
+            .find(|header| header.field.equiv("Host"))
+            .is_some_and(|header| !is_local_host(header.value.as_str()));
+        let response = if foreign_host {
+            Response::from_string("forbidden\n").with_status_code(403)
+        } else if is_page(request.url()) {
             Response::from_data(page.as_bytes()).with_header(html.clone())
         } else {
             Response::from_string("not found\n").with_status_code(404)
         };
+        let response = response.with_header(sandbox.clone());
         // A client that hangs up early must not stop the server.
         let _ = request.respond(response);
     }
     Ok(())
 }
 
+/// A browser sends the attacker's own host name in a DNS rebinding request, so only IP literals and
+/// `localhost` (with or without a trailing dot) are local.
+fn is_local_host(authority: &str) -> bool {
+    let host = match authority.strip_prefix('[') {
+        Some(rest) => rest.split_once(']').map_or(rest, |(host, _)| host),
+        None => authority
+            .rsplit_once(':')
+            .map_or(authority, |(host, _)| host),
+    };
+    host.parse::<IpAddr>().is_ok() || host.trim_end_matches('.').eq_ignore_ascii_case("localhost")
+}
+
 fn is_page(url: &str) -> bool {
     url.split(['?', '#']).next() == Some("/")
 }
 
-/// Starts `skald serve` for one design version in the background and returns its URL.
-pub fn spawn(id: &str, version: u32, idle_timeout: Option<u64>) -> Result<String, SkaldError> {
+/// Starts `skald serve` for `page` in the background and returns its URL.
+pub fn spawn(page: &str, idle_timeout: Option<u64>) -> Result<String, SkaldError> {
     let exe = std::env::current_exe()
         .map_err(|err| failed(format!("cannot find the skald executable: {err}")))?;
     let mut cmd = Command::new(exe);
-    cmd.args(["serve", "--design", id, "--version", &version.to_string()]);
+    cmd.args(["serve", "--page-from-stdin"]);
     if let Some(seconds) = idle_timeout {
         cmd.args(["--idle-timeout", &seconds.to_string()]);
     }
     // In JSON, an error the server prints before its URL fits on the one line read below.
     cmd.arg("--json")
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     detach(&mut cmd);
     let mut child = cmd
         .spawn()
         .map_err(|err| failed(format!("cannot start the local server: {err}")))?;
+    // A child that exits early closes the pipe. The write error is ignored so that the child's
+    // own error line is still read below.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(page.as_bytes());
+    }
 
     let mut line = String::new();
     BufReader::new(child.stdout.take().expect("stdout is piped"))
@@ -105,9 +140,24 @@ pub fn launch_browser(url: &str) -> &'static str {
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     detach(&mut cmd);
-    match cmd.spawn() {
-        Ok(_) => "launched",
-        Err(_) => "unavailable",
+    let Ok(mut child) = cmd.spawn() else {
+        return "unavailable";
+    };
+    // A launcher still running at the deadline is left alone: `xdg-open` can stay in the
+    // foreground for as long as the browser it started.
+    let deadline = Instant::now() + LAUNCHER_WAIT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return if status.success() {
+                    "launched"
+                } else {
+                    "unavailable"
+                };
+            }
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => return "launched",
+        }
     }
 }
 
@@ -154,6 +204,30 @@ mod tests {
         assert!(!is_page("/nope"));
         assert!(!is_page("/favicon.ico"));
         assert!(!is_page(""));
+    }
+
+    #[test]
+    fn only_ip_literals_and_localhost_are_local_hosts() {
+        for host in [
+            "127.0.0.1",
+            "127.0.0.1:80",
+            "[::1]:8080",
+            "[::1]",
+            "localhost",
+            "LocalHost:1",
+            "localhost.:9",
+        ] {
+            assert!(is_local_host(host), "{host}");
+        }
+        for host in [
+            "attacker.example",
+            "attacker.example:80",
+            "127.0.0.1.evil.example",
+            "",
+            "localhost.evil.example",
+        ] {
+            assert!(!is_local_host(host), "{host}");
+        }
     }
 
     #[test]

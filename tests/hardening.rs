@@ -6,12 +6,11 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use assert_cmd::assert::OutputAssertExt;
-use common::Sandbox;
+use common::{ORIGIN, Sandbox};
 use rusqlite::Connection;
 use serde_json::Value;
 
 const BIN: &str = env!("CARGO_BIN_EXE_skald");
-const ORIGIN: &str = "https://github.com/acme/orders.git";
 const DEADLINE: Duration = Duration::from_secs(5);
 
 const MODEL_V1: &str = "\
@@ -306,6 +305,10 @@ fn offline_unavailable() -> Option<String> {
 #[test]
 fn commands_succeed_without_network() {
     if let Some(reason) = offline_unavailable() {
+        assert!(
+            std::env::var("SKALD_REQUIRE_OFFLINE_TEST").as_deref() != Ok("1"),
+            "SKALD_REQUIRE_OFFLINE_TEST=1 but the offline test cannot run: {reason}"
+        );
         println!("skipped: {reason}");
         return;
     }

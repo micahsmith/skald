@@ -6,12 +6,11 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use assert_cmd::assert::OutputAssertExt;
-use common::Sandbox;
+use common::{ORIGIN, Sandbox, keys};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const ORIGIN: &str = "https://github.com/acme/orders.git";
 const MARKETPLACE_ADD: &str =
     "plugin marketplace add https://github.com/micahsmith/skald.git --scope user";
 const PLUGIN_INSTALL: &str = "plugin install code-skillset@skald --scope user";
@@ -41,15 +40,6 @@ fn read_json(path: &Path) -> Value {
 fn write_json(path: &Path, value: &Value) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, value.to_string()).unwrap();
-}
-
-fn keys(value: &Value) -> Vec<&str> {
-    value
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect()
 }
 
 fn help(value: &Value) -> Vec<&str> {
@@ -279,6 +269,26 @@ fn setup_is_idempotent() {
 }
 
 #[test]
+fn settings_file_is_private() {
+    let sandbox = Sandbox::new();
+    let mode = |sandbox: &Sandbox| {
+        std::fs::metadata(settings_path(sandbox))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777
+    };
+
+    sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    assert_eq!(mode(&sandbox), 0o600);
+
+    write_json(&settings_path(&sandbox), &json!({"model": "opus"}));
+    std::fs::set_permissions(settings_path(&sandbox), PermissionsExt::from_mode(0o600)).unwrap();
+    sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    assert_eq!(mode(&sandbox), 0o600);
+}
+
+#[test]
 fn existing_settings_are_preserved() {
     let sandbox = Sandbox::new();
     let pre_tool_use = json!([
@@ -324,6 +334,35 @@ fn stale_hook_path_is_repaired() {
 }
 
 #[test]
+fn hooks_sharing_an_entry_with_skald_survive_setup() {
+    let sandbox = Sandbox::new();
+    let load_env = json!({"type": "command", "command": "~/bin/load-env.sh"});
+    let shared = json!({
+        "hooks": [load_env, {"type": "command", "command": "/old/skald hook claude-code"}]
+    });
+    write_json(
+        &settings_path(&sandbox),
+        &json!({"hooks": {"SessionStart": [shared]}}),
+    );
+
+    let setup = sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    assert_eq!(step(&setup, "hook")["status"], "repaired");
+    let settings = read_json(&settings_path(&sandbox));
+    assert_eq!(skald_commands(&settings).len(), 1);
+    let entries = settings["hooks"]["SessionStart"].as_array().unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["hooks"] == json!([load_env])),
+        "{settings:#}"
+    );
+
+    let setup = sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    assert_eq!(step(&setup, "hook")["status"], "unchanged");
+    assert_eq!(read_json(&settings_path(&sandbox)), settings);
+}
+
+#[test]
 fn plugin_is_installed_when_absent() {
     let sandbox = Sandbox::new();
     fake_claude(&sandbox);
@@ -362,8 +401,21 @@ fn plugin_is_left_alone_when_present() {
 #[test]
 fn missing_claude_executable_is_reported_not_fatal() {
     let sandbox = Sandbox::new();
+    let empty = sandbox.root.join("no-claude");
+    std::fs::create_dir(&empty).unwrap();
+    let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .map(|dir| dir.join("git"))
+        .find(|path| path.is_file())
+        .expect("git on PATH");
+    std::os::unix::fs::symlink(git, empty.join("git")).unwrap();
 
-    let setup = sandbox.json(&sandbox.work, &["setup"]);
+    let output = sandbox
+        .cmd()
+        .env("PATH", &empty)
+        .args(["setup", "--json"])
+        .output()
+        .unwrap();
+    let setup: Value = serde_json::from_slice(&output.stdout).unwrap();
     let plugin = step(&setup, "plugin");
     assert_eq!(plugin["status"], "skipped");
     let detail = plugin["detail"].as_str().unwrap();
@@ -464,6 +516,43 @@ fn plugin_without_a_minimum_is_unknown() {
 }
 
 #[test]
+fn plugin_without_a_minimum_gets_an_update_command() {
+    let sandbox = Sandbox::new();
+    install_plugin(
+        &sandbox,
+        &plugins_dir(&sandbox),
+        "code-skillset@cc-loadout",
+        None,
+    );
+
+    let home = sandbox.json(&sandbox.work, &[]);
+    assert_eq!(home["plugin"]["status"], "unknown");
+    let update = "claude plugin marketplace update cc-loadout && claude plugin update code-skillset@cc-loadout";
+    assert!(help(&home).contains(&update), "home:\n{home:#}");
+}
+
+#[test]
+fn plugin_with_a_minimum_gets_no_update_command() {
+    for min in [VERSION, "9.0.0"] {
+        let sandbox = Sandbox::new();
+        install_plugin(
+            &sandbox,
+            &plugins_dir(&sandbox),
+            "code-skillset@cc-loadout",
+            Some(min),
+        );
+
+        let home = sandbox.json(&sandbox.work, &[]);
+        assert!(
+            help(&home)
+                .iter()
+                .all(|line| !line.starts_with("claude plugin")),
+            "min {min}, home:\n{home:#}"
+        );
+    }
+}
+
+#[test]
 fn missing_plugin_is_reported() {
     let sandbox = Sandbox::new();
 
@@ -523,13 +612,50 @@ fn hook_with_an_unreadable_store_prints_one_line() {
 }
 
 #[test]
+fn sandbox_path_keeps_outer_tools_and_stubs_claude() {
+    let sandbox = Sandbox::new();
+    let outer = sandbox.root.join("outer");
+    std::fs::create_dir(&outer).unwrap();
+    for name in ["claude", "marker"] {
+        let path = outer.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\necho outer-{name}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let real = std::env::var_os("PATH").unwrap();
+    let dirs = std::iter::once(outer.clone()).chain(std::env::split_paths(&real));
+    let path = sandbox.path_over(&std::env::join_paths(dirs).unwrap());
+
+    let marker = sandbox
+        .command("sh", &sandbox.work)
+        .env("PATH", &path)
+        .args(["-c", "marker"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&marker.stdout), "outer-marker\n");
+
+    let claude = sandbox
+        .command("sh", &sandbox.work)
+        .env("PATH", &path)
+        .args(["-c", "command -v claude"])
+        .output()
+        .unwrap();
+    let found = String::from_utf8(claude.stdout).unwrap();
+    assert_eq!(found.trim(), sandbox.bin.join("claude").to_str().unwrap());
+    let run = sandbox
+        .command(sandbox.bin.join("claude"), &sandbox.work)
+        .output()
+        .unwrap();
+    assert!(!run.status.success());
+}
+
+#[test]
 fn setup_respects_claude_config_dir() {
     let sandbox = Sandbox::new();
     let config = sandbox.root.join("cfg");
 
     sandbox
         .cmd()
-        .args(["setup", "--json"])
+        .args(["setup", "--no-plugin", "--json"])
         .env("CLAUDE_CONFIG_DIR", &config)
         .assert()
         .success();
@@ -538,11 +664,47 @@ fn setup_respects_claude_config_dir() {
 }
 
 #[test]
-fn hook_command_is_the_bare_name_when_path_finds_this_skald() {
+fn hook_command_is_the_absolute_path_that_path_finds_for_this_skald() {
     let sandbox = Sandbox::new();
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_skald"), sandbox.bin.join("skald")).unwrap();
+    let link = sandbox.bin.join("skald");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_skald"), &link).unwrap();
 
     sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
     let settings = read_json(&settings_path(&sandbox));
-    assert_eq!(skald_commands(&settings), ["skald hook claude-code"]);
+    let expected = format!("{} hook claude-code", link.display());
+    assert!(link.is_absolute());
+    assert_eq!(skald_commands(&settings), [expected]);
+}
+
+#[test]
+fn bare_name_hook_is_replaced_by_the_absolute_form() {
+    let sandbox = Sandbox::new();
+    let link = sandbox.bin.join("skald");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_skald"), &link).unwrap();
+    let bare = json!({"hooks": [{"type": "command", "command": "skald hook claude-code"}]});
+    write_json(
+        &settings_path(&sandbox),
+        &json!({"hooks": {"SessionStart": [bare]}}),
+    );
+
+    let setup = sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    assert_eq!(step(&setup, "hook")["status"], "repaired");
+    let settings = read_json(&settings_path(&sandbox));
+    assert_eq!(
+        skald_commands(&settings),
+        [format!("{} hook claude-code", link.display())]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_creates_the_data_directory_private() {
+    let sandbox = Sandbox::new();
+
+    sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
+    let mode = std::fs::metadata(&sandbox.data)
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700, "mode is {:o}", mode & 0o777);
 }

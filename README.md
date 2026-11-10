@@ -18,7 +18,7 @@ Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Fol
 in order:
 
 1. Fetch the latest commit of the default branch over HTTPS. Assume you do not have access to SSH.
-2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald`
+2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or `cc-loadout`
    marketplace entry. Leave everything else in place.
 3. Install at the user level, using the native install mechanism of the agent you are running in:
    - If the agent supports Claude Code plugin marketplaces, add the repository as the `skald`
@@ -103,10 +103,9 @@ These environment variables change where skald reads and writes files:
 | Path | Contents |
 | --- | --- |
 | `Cargo.toml`, `src/` | The `skald` crate and its binary. |
-| `tests/` | Integration tests that run the built binary. |
+| `tests/` | Integration tests that run the built binary, and checks of repository files. |
 | `plugin/` | The `code-skillset` plugin. |
 | `plugin/skills/` | One directory per skill. |
 | `plugin/hooks/` | The session hooks and the guides they print. |
 | `.claude-plugin/marketplace.json` | The `skald` marketplace. Its one entry points at `./plugin`. |
-| `.github/workflows/ci.yml` | CI: the full test suite and a plugin smoke test. |
-| `.github/workflows/release.yml` | Release: on a `v*` tag, builds the binary on Linux and macOS and attaches each to the release. |
+| `scripts/ci.sh` | Local CI: format, lint, tests, and a plugin smoke test. |

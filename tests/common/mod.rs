@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::ffi::{OsStr, OsString};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -16,6 +17,69 @@ const OUTER_VARS: [&str; 4] = [
     "GIT_INDEX_FILE",
     "CLAUDE_CODE_PLUGIN_CACHE_DIR",
 ];
+
+pub const ORIGIN: &str = "https://github.com/acme/orders.git";
+
+/// Two entities, Order and Customer, joined by one relation.
+pub const MODEL_TOON: &str = "\
+entities[2]:
+  - name: Order
+    description: A customer order
+    fields[2]{name,type,nullable}:
+      id,uuid,false
+      total,decimal,false
+    relations[1]{target,cardinality,name}:
+      Customer,one,customer
+  - name: Customer
+    fields[1]{name,type,nullable}:
+      id,uuid,false
+";
+
+/// An interface record with two operations, the second without a description.
+pub const INTERFACE_TOON: &str = "\
+operations[2]:
+  - name: createOrder
+    description: Creates an order for a customer
+    inputs[1]{name,type,nullable}:
+      customer_id,uuid,false
+    outputs[1]{name,type,nullable}:
+      order,Order,false
+    errors[1]{name,condition}:
+      CustomerNotFound,no customer has customer_id
+  - name: getOrder
+    inputs[1]{name,type,nullable}:
+      order_id,uuid,false
+    outputs[1]{name,type,nullable}:
+      order,Order,false
+    errors[1]{name,condition}:
+      OrderNotFound,no order has order_id
+";
+
+pub fn keys(value: &Value) -> Vec<&str> {
+    value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect()
+}
+
+/// Submits `contents` as design `name` of `kind`, in JSON or TOON, and returns skald's output.
+pub fn submit(sandbox: &Sandbox, dir: &Path, kind: &str, name: &str, contents: &str) -> Value {
+    let file = sandbox.file(&format!("{name}.{kind}"), contents);
+    let file = file.to_str().unwrap();
+    sandbox.json(
+        dir,
+        &[
+            "design", "submit", "--kind", kind, "--name", name, "--file", file,
+        ],
+    )
+}
+
+pub fn submit_id(sandbox: &Sandbox, dir: &Path, kind: &str, name: &str, contents: &str) -> String {
+    let submitted = submit(sandbox, dir, kind, name, contents);
+    submitted["design"]["id"].as_str().unwrap().to_owned()
+}
 
 /// A temporary directory that holds every location skald and git read, so that tests never touch
 /// the developer's home directory, store, or git configuration.
@@ -49,6 +113,15 @@ impl Sandbox {
         for dir in [&sandbox.home, &sandbox.bin, &sandbox.work] {
             std::fs::create_dir_all(dir).unwrap();
         }
+        // Filtering PATH directories to hide the real `claude` would also hide git and bash when
+        // both live beside it, so a failing stub shadows it instead.
+        let stub = sandbox.bin.join("claude");
+        std::fs::write(
+            &stub,
+            "#!/bin/sh\necho 'the real claude is blocked in tests' >&2\nexit 1\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
         sandbox
     }
 
@@ -56,12 +129,14 @@ impl Sandbox {
         self.data.join("skald.db")
     }
 
+    /// `sandbox.bin` followed by every directory of `outer`, unchanged.
+    pub fn path_over(&self, outer: &OsStr) -> OsString {
+        let dirs = std::env::split_paths(outer);
+        std::env::join_paths(std::iter::once(self.bin.clone()).chain(dirs)).unwrap()
+    }
+
     fn env(&self) -> Vec<(&'static str, OsString)> {
-        // The real `claude` must never run from a test, so every directory that holds one stays
-        // off PATH.
-        let outer = std::env::var_os("PATH").unwrap_or_default();
-        let dirs = std::env::split_paths(&outer).filter(|dir| !dir.join("claude").exists());
-        let path = std::env::join_paths(std::iter::once(self.bin.clone()).chain(dirs)).unwrap();
+        let path = self.path_over(&std::env::var_os("PATH").unwrap_or_default());
         vec![
             ("HOME", self.home.clone().into()),
             ("SKALD_HOME", self.data.clone().into()),

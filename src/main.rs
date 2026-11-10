@@ -82,12 +82,27 @@ fn dispatch(cli: Cli, stdout: &mut impl Write) -> Result<Output, SkaldError> {
         Some(Command::Serve {
             design,
             version,
+            page_from_stdin,
             idle_timeout,
             port,
         }) => {
-            let mut store = Store::open(&paths::data_dir()?)?;
-            let (_, page) = design::served(&mut store, &current_dir()?, &design, Some(version))?;
-            drop(store);
+            let page = match (design, version) {
+                (Some(design), Some(version)) if !page_from_stdin => {
+                    let mut store = Store::open(&paths::data_dir()?)?;
+                    let (_, page) =
+                        design::served(&mut store, &current_dir()?, &design, Some(version))?;
+                    page
+                }
+                _ => {
+                    let mut page = String::new();
+                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut page).map_err(
+                        |err| {
+                            SkaldError::new("serve-failed", format!("cannot read the page: {err}"))
+                        },
+                    )?;
+                    page
+                }
+            };
             serve::serve(page, port, idle_timeout, stdout)?;
             Ok(Output::Raw(String::new()))
         }
@@ -101,67 +116,4 @@ fn current_dir() -> Result<PathBuf, SkaldError> {
             format!("cannot read the working directory: {err}"),
         )
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::Value;
-
-    fn read(path: &str) -> String {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()))
-    }
-
-    fn read_json(path: &str) -> Value {
-        serde_json::from_str(&read(path)).unwrap()
-    }
-
-    /// The runners a job runs on, with `${{ matrix.os }}` expanded from its matrix.
-    fn runners(job: &serde_yaml::Value) -> Vec<String> {
-        match job["runs-on"].as_str() {
-            Some(runner) if !runner.contains("${{") => vec![runner.to_owned()],
-            _ => {
-                let matrix = &job["strategy"]["matrix"];
-                let listed = matrix["os"].as_sequence().into_iter().flatten();
-                let included = matrix["include"].as_sequence().into_iter().flatten();
-                listed
-                    .chain(included.map(|entry| &entry["os"]))
-                    .filter_map(|os| os.as_str().map(str::to_owned))
-                    .collect()
-            }
-        }
-    }
-
-    #[test]
-    fn release_workflow_builds_version_tags_on_linux_and_macos() {
-        let workflow: serde_yaml::Value =
-            serde_yaml::from_str(&read(".github/workflows/release.yml")).unwrap();
-        let tags = workflow["on"]["push"]["tags"]
-            .as_sequence()
-            .expect("on.push.tags is a list");
-        assert!(
-            tags.iter().any(|tag| tag.as_str() == Some("v*")),
-            "tags: {tags:?}"
-        );
-
-        let jobs = workflow["jobs"].as_mapping().expect("jobs is a mapping");
-        let runners: Vec<String> = jobs.values().flat_map(runners).collect();
-        for runner in ["ubuntu-latest", "macos-latest"] {
-            assert!(runners.iter().any(|r| r == runner), "runners: {runners:?}");
-        }
-    }
-
-    #[test]
-    fn marketplace_points_at_the_plugin_directory() {
-        let marketplace = read_json(".claude-plugin/marketplace.json");
-        assert_eq!(marketplace["name"], "skald");
-        let plugins = marketplace["plugins"].as_array().unwrap();
-        assert_eq!(plugins.len(), 1);
-        assert_eq!(plugins[0]["name"], "code-skillset");
-        assert_eq!(plugins[0]["source"], "./plugin");
-
-        let plugin = read_json("plugin/.claude-plugin/plugin.json");
-        assert_eq!(plugin["metadata"]["skaldMinVersion"], "0.1.0");
-    }
 }

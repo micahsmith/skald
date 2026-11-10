@@ -89,3 +89,29 @@ fn unknown_command() {
     let value = usage_error(&["frobnicate"]);
     assert_eq!(value["error"]["code"], "unknown-command");
 }
+
+#[test]
+fn command_help_describes_flags_and_root_help_hides_serve() {
+    let sandbox = Sandbox::new();
+    let assert = sandbox
+        .cmd()
+        .args(["design", "submit", "--help"])
+        .assert()
+        .success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    for flag in ["--kind", "--name", "--file", "--json"] {
+        let mut lines = stdout.lines();
+        let line = lines
+            .find(|line| line.trim_start().starts_with(flag))
+            .unwrap_or_else(|| panic!("{flag} missing from:\n{stdout}"));
+        let description = lines.next().unwrap_or_default();
+        assert!(
+            line.trim_start().starts_with(flag) && !description.trim().is_empty(),
+            "{flag} has no description in:\n{stdout}"
+        );
+    }
+
+    let assert = sandbox.cmd().arg("--help").assert().success();
+    let root = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(!root.contains("serve"), "root help lists serve:\n{root}");
+}

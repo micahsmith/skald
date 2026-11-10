@@ -4,76 +4,12 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use assert_cmd::assert::OutputAssertExt;
-use common::Sandbox;
+use common::{INTERFACE_TOON, MODEL_TOON, ORIGIN, Sandbox, submit_id};
 use scraper::{ElementRef, Html, Selector};
 use serde_json::{Value, json};
 
-const ORIGIN: &str = "https://github.com/acme/orders.git";
-
-/// The data-model example from the plan's global decision anchors.
-const MODEL_TOON: &str = "\
-entities[2]:
-  - name: Order
-    description: A customer order
-    fields[2]{name,type,nullable}:
-      id,uuid,false
-      total,decimal,false
-    relations[1]{target,cardinality,name}:
-      Customer,one,customer
-  - name: Customer
-    fields[1]{name,type,nullable}:
-      id,uuid,false
-";
-
-/// The interface example: two operations, the second without a description.
-const INTERFACE_TOON: &str = "\
-operations[2]:
-  - name: createOrder
-    description: Creates an order for a customer
-    inputs[1]{name,type,nullable}:
-      customer_id,uuid,false
-    outputs[1]{name,type,nullable}:
-      order,Order,false
-    errors[1]{name,condition}:
-      CustomerNotFound,no customer has customer_id
-  - name: getOrder
-    inputs[1]{name,type,nullable}:
-      order_id,uuid,false
-    outputs[1]{name,type,nullable}:
-      order,Order,false
-    errors[1]{name,condition}:
-      OrderNotFound,no order has order_id
-";
-
-/// Submits `contents` as data-model design `name` and returns the design id.
-fn submit(sandbox: &Sandbox, dir: &Path, name: &str, contents: &str) -> String {
-    submit_kind(sandbox, dir, "data-model", name, contents)
-}
-
-fn submit_interface(sandbox: &Sandbox, dir: &Path, name: &str, contents: &str) -> String {
-    submit_kind(sandbox, dir, "interface", name, contents)
-}
-
-fn submit_kind(sandbox: &Sandbox, dir: &Path, kind: &str, name: &str, contents: &str) -> String {
-    let file = sandbox.file(&format!("{name}.record"), contents);
-    let submitted = sandbox.json(
-        dir,
-        &[
-            "design",
-            "submit",
-            "--kind",
-            kind,
-            "--name",
-            name,
-            "--file",
-            file.to_str().unwrap(),
-        ],
-    );
-    submitted["design"]["id"].as_str().unwrap().to_owned()
-}
-
 fn submit_example(sandbox: &Sandbox, dir: &Path) -> String {
-    submit(sandbox, dir, "orders", MODEL_TOON)
+    submit_id(sandbox, dir, "data-model", "orders", MODEL_TOON)
 }
 
 /// Renders design `id` to `out` with `--json`, asserts success, and returns the output.
@@ -207,7 +143,13 @@ fn record_text_is_escaped() {
     let record = json!({
         "entities": [{"name": "<b>Bold</b>", "description": "a & b", "fields": []}]
     });
-    let id = submit(&sandbox, &repo, "escaped", &record.to_string());
+    let id = submit_id(
+        &sandbox,
+        &repo,
+        "data-model",
+        "escaped",
+        &record.to_string(),
+    );
 
     let page = page(&sandbox, &repo, &id, &[]);
     assert!(page.contains("&lt;b&gt;Bold&lt;/b&gt;"), "page:\n{page}");
@@ -228,7 +170,13 @@ fn nullable_fields_show_a_marker() {
             ]
         }]
     });
-    let id = submit(&sandbox, &repo, "nullable", &record.to_string());
+    let id = submit_id(
+        &sandbox,
+        &repo,
+        "data-model",
+        "nullable",
+        &record.to_string(),
+    );
 
     let html = Html::parse_document(&page(&sandbox, &repo, &id, &[]));
     let fields: Vec<String> = select(&html, r#"[data-kind="field"]"#)
@@ -243,9 +191,18 @@ fn older_version_renders_the_older_record() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
     let first = json!({"entities": [{"name": "Invoice"}]});
-    let id = submit(&sandbox, &repo, "billing", &first.to_string());
+    let id = submit_id(&sandbox, &repo, "data-model", "billing", &first.to_string());
     let second = json!({"entities": [{"name": "Bill"}]});
-    assert_eq!(submit(&sandbox, &repo, "billing", &second.to_string()), id);
+    assert_eq!(
+        submit_id(
+            &sandbox,
+            &repo,
+            "data-model",
+            "billing",
+            &second.to_string()
+        ),
+        id
+    );
 
     let older = page(&sandbox, &repo, &id, &["--version", "1"]);
     assert!(older.contains("Invoice"), "page:\n{older}");
@@ -279,7 +236,7 @@ fn layout_is_a_grid() {
     let names = ["A", "B", "C", "D", "E"];
     let entities: Vec<Value> = names.iter().map(|name| json!({"name": name})).collect();
     let record = json!({"entities": entities});
-    let id = submit(&sandbox, &repo, "grid", &record.to_string());
+    let id = submit_id(&sandbox, &repo, "data-model", "grid", &record.to_string());
 
     let html = Html::parse_document(&page(&sandbox, &repo, &id, &[]));
     let ys: Vec<f64> = select(&html, r#"[data-kind="entity"] > rect"#)
@@ -315,7 +272,7 @@ fn unknown_design_or_version_is_not_found() {
 fn interface_operations_render_as_rows_with_ids() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let id = submit_interface(&sandbox, &repo, "orders-api", INTERFACE_TOON);
+    let id = submit_id(&sandbox, &repo, "interface", "orders-api", INTERFACE_TOON);
     let record = sandbox.json(&repo, &["design", "get", &id])["record"].clone();
     let operation_ids: Vec<&str> = record["operations"]
         .as_array()
@@ -342,7 +299,7 @@ fn interface_operations_render_as_rows_with_ids() {
 fn interface_inputs_outputs_and_errors_carry_ids() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let id = submit_interface(&sandbox, &repo, "orders-api", INTERFACE_TOON);
+    let id = submit_id(&sandbox, &repo, "interface", "orders-api", INTERFACE_TOON);
     let record = sandbox.json(&repo, &["design", "get", &id])["record"].clone();
     let create = &record["operations"][0];
     assert_eq!(create["name"], "createOrder");
@@ -373,7 +330,7 @@ fn interface_inputs_outputs_and_errors_carry_ids() {
 fn interface_render_is_deterministic_and_self_contained() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    let id = submit_interface(&sandbox, &repo, "orders-api", INTERFACE_TOON);
+    let id = submit_id(&sandbox, &repo, "interface", "orders-api", INTERFACE_TOON);
 
     let assert = sandbox
         .cmd_in(&repo)
@@ -408,7 +365,7 @@ fn empty_interface_cells_say_none() {
             "outputs": [{"name": "orders", "type": "Order[]", "nullable": true}]
         }]
     });
-    let id = submit_interface(&sandbox, &repo, "listing", &record.to_string());
+    let id = submit_id(&sandbox, &repo, "interface", "listing", &record.to_string());
 
     let html = Html::parse_document(&page(&sandbox, &repo, &id, &[]));
     let rows = select(&html, r#"tr[data-kind="operation"]"#);

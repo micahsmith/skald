@@ -71,3 +71,45 @@ fn data_directory_defaults_to_home_and_can_be_overridden() {
         .success();
     assert!(sandbox.home.join(".skald/skald.db").exists());
 }
+
+#[test]
+fn read_commands_do_not_wait_for_the_write_lock() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin("https://github.com/acme/orders.git");
+    sandbox
+        .cmd_in(&repo)
+        .args(["design", "list"])
+        .assert()
+        .success();
+
+    let holder = Connection::open(sandbox.store_path()).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let started = std::time::Instant::now();
+    sandbox
+        .cmd_in(&repo)
+        .args(["design", "list"])
+        .assert()
+        .success();
+    let elapsed = started.elapsed();
+    holder.execute_batch("ROLLBACK").unwrap();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "design list waited {elapsed:?} for the write lock"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn store_creates_the_data_directory_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin("https://github.com/acme/orders.git");
+
+    sandbox.cmd_in(&repo).assert().success();
+    let mode = std::fs::metadata(&sandbox.data)
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700, "mode is {:o}", mode & 0o777);
+}

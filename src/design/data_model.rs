@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::check::{Check, Element};
-use super::diff::{self, Record};
+use super::check::{Check, ElementKind, Site};
+use super::diff::{self, Diffable};
 use super::{Problem, Typed};
 
 /// A data-model record as submitted. Unknown keys are collected rather than refused by serde, so
@@ -92,11 +92,11 @@ pub(super) enum Cardinality {
     Many,
 }
 
-impl Record for DataModelRecord {
+impl Diffable for DataModelRecord {
     fn elements(&self) -> Vec<diff::Element> {
         let mut elements = Vec::new();
         for entity in &self.entities {
-            elements.push(Element::Entity.for_diff(
+            elements.push(ElementKind::Entity.for_diff(
                 &entity.id,
                 [
                     ("name", json!(entity.name)),
@@ -104,7 +104,7 @@ impl Record for DataModelRecord {
                 ],
             ));
             elements.extend(entity.fields.iter().map(|field| {
-                Element::Field.for_diff(
+                ElementKind::Field.for_diff(
                     &field.id,
                     [
                         ("parent", json!(entity.id)),
@@ -116,7 +116,7 @@ impl Record for DataModelRecord {
                 )
             }));
             elements.extend(entity.relations.iter().map(|relation| {
-                Element::Relation.for_diff(
+                ElementKind::Relation.for_diff(
                     &relation.id,
                     [
                         ("parent", json!(entity.id)),
@@ -129,6 +129,26 @@ impl Record for DataModelRecord {
         }
         elements
     }
+
+    fn ids(&self) -> Vec<(String, &'static str)> {
+        let mut ids = Vec::new();
+        for entity in &self.entities {
+            ids.push((entity.id.clone(), ElementKind::Entity.noun()));
+            ids.extend(
+                entity
+                    .fields
+                    .iter()
+                    .map(|field| (field.id.clone(), ElementKind::Field.noun())),
+            );
+            ids.extend(
+                entity
+                    .relations
+                    .iter()
+                    .map(|relation| (relation.id.clone(), ElementKind::Relation.noun())),
+            );
+        }
+        ids
+    }
 }
 
 impl Typed for DataModelRecord {
@@ -138,48 +158,38 @@ impl Typed for DataModelRecord {
         submission: &DataModelSubmission,
         previous: Option<&Self>,
     ) -> Result<Self, Vec<Problem>> {
-        validate(submission, previous)
+        let mut check = Check::new(previous);
+        check.unknown_record_keys(&submission.unknown, "a data-model record");
+
+        // Entity ids come first, so that a relation can target an entity listed after it.
+        let entity_ids: Vec<String> = submission
+            .entities
+            .iter()
+            .map(|entity| ElementKind::Entity.assign(entity.id.as_deref()))
+            .collect();
+        let targets: HashMap<&str, &str> = submission
+            .entities
+            .iter()
+            .zip(&entity_ids)
+            .filter_map(|(entity, id)| {
+                let key = entity.id.as_deref().or(entity.name.as_deref())?;
+                Some((key, id.as_str()))
+            })
+            .collect();
+
+        let mut names = HashSet::new();
+        let entities = submission
+            .entities
+            .iter()
+            .zip(&entity_ids)
+            .enumerate()
+            .map(|(index, (entity, id))| {
+                let path = format!("/entities/{index}");
+                entity.validate(&mut check, &mut names, &path, id, &targets)
+            })
+            .collect();
+        check.finish(DataModelRecord { entities })
     }
-}
-
-/// Validates `submission` and assigns ids to new elements in one pass. `previous` is the newest
-/// stored record of the same design, whose ids a submission may keep. Problems are listed in
-/// document order, each element's own before its children's.
-pub fn validate(
-    submission: &DataModelSubmission,
-    previous: Option<&DataModelRecord>,
-) -> Result<DataModelRecord, Vec<Problem>> {
-    let mut check = Check::new(previous);
-    check.unknown_keys(&submission.unknown, "", None, "a data-model record");
-
-    // Entity ids come first, so that a relation can target an entity listed after it.
-    let entity_ids: Vec<String> = submission
-        .entities
-        .iter()
-        .map(|entity| Element::Entity.assign(entity.id.as_deref()))
-        .collect();
-    let targets: HashMap<&str, &str> = submission
-        .entities
-        .iter()
-        .zip(&entity_ids)
-        .filter_map(|(entity, id)| {
-            let key = entity.id.as_deref().or(entity.name.as_deref())?;
-            Some((key, id.as_str()))
-        })
-        .collect();
-
-    let mut names = HashSet::new();
-    let entities = submission
-        .entities
-        .iter()
-        .zip(&entity_ids)
-        .enumerate()
-        .map(|(index, (entity, id))| {
-            let path = format!("/entities/{index}");
-            entity.validate(&mut check, &mut names, &path, id, &targets)
-        })
-        .collect();
-    check.finish(DataModelRecord { entities })
 }
 
 impl EntitySubmission {
@@ -192,15 +202,14 @@ impl EntitySubmission {
         targets: &HashMap<&str, &str>,
     ) -> Entity {
         let supplied = self.id.as_deref();
-        check.id(Element::Entity, supplied, path);
-        let name = check.name(
-            siblings,
-            Element::Entity,
-            self.name.as_deref(),
+        let site = Site {
+            element: ElementKind::Entity,
             path,
-            supplied,
-        );
-        check.unknown_keys(&self.unknown, path, supplied, "an entity");
+            id: supplied,
+        };
+        check.id(&site);
+        let name = check.name(&site, siblings, self.name.as_deref());
+        check.unknown_keys(&site, &self.unknown);
 
         let mut names = HashSet::new();
         let fields = self
@@ -239,25 +248,17 @@ impl FieldSubmission {
         path: &str,
     ) -> Field {
         let supplied = self.id.as_deref();
-        check.id(Element::Field, supplied, path);
-        let name = check.name(
-            siblings,
-            Element::Field,
-            self.name.as_deref(),
+        let site = Site {
+            element: ElementKind::Field,
             path,
-            supplied,
-        );
-        let r#type = check.required(
-            Element::Field,
-            "type",
-            "missing-type",
-            self.r#type.as_deref(),
-            path,
-            supplied,
-        );
-        check.unknown_keys(&self.unknown, path, supplied, "a field");
+            id: supplied,
+        };
+        check.id(&site);
+        let name = check.name(&site, siblings, self.name.as_deref());
+        let r#type = check.required(&site, "type", "missing-type", self.r#type.as_deref());
+        check.unknown_keys(&site, &self.unknown);
         Field {
-            id: Element::Field.assign(supplied),
+            id: ElementKind::Field.assign(supplied),
             name,
             r#type,
             nullable: self.nullable.unwrap_or(false),
@@ -276,7 +277,12 @@ impl RelationSubmission {
         targets: &HashMap<&str, &str>,
     ) -> Option<Relation> {
         let supplied = self.id.as_deref();
-        check.id(Element::Relation, supplied, path);
+        let site = Site {
+            element: ElementKind::Relation,
+            path,
+            id: supplied,
+        };
+        check.id(&site);
         let target = match self.target.as_deref() {
             Some(target) => targets.get(target).copied().ok_or_else(|| {
                 format!(
@@ -287,7 +293,7 @@ impl RelationSubmission {
             None => Err("relation has no target".to_owned()),
         };
         let target = target
-            .map_err(|message| check.report(path, supplied, "unknown-target", message))
+            .map_err(|message| check.report(&site, path, "unknown-target", message))
             .ok();
         let cardinality = match self.cardinality.as_deref() {
             Some("one") => Ok(Cardinality::One),
@@ -296,14 +302,14 @@ impl RelationSubmission {
             None => Err("relation has no cardinality; use `one` or `many`".to_owned()),
         };
         let cardinality = cardinality
-            .map_err(|message| check.report(path, supplied, "invalid-cardinality", message))
+            .map_err(|message| check.report(&site, path, "invalid-cardinality", message))
             .ok();
         if let Some(name) = self.name.as_deref().filter(|name| !name.is_empty()) {
-            check.unique(siblings, Element::Relation, name, path, supplied);
+            check.unique(&site, siblings, name);
         }
-        check.unknown_keys(&self.unknown, path, supplied, "a relation");
+        check.unknown_keys(&site, &self.unknown);
         Some(Relation {
-            id: Element::Relation.assign(supplied),
+            id: ElementKind::Relation.assign(supplied),
             target: target?.to_owned(),
             cardinality: cardinality?,
             name: self.name.clone(),
@@ -339,7 +345,7 @@ mod tests {
     }
 
     fn problems(value: Value, previous: Option<&DataModelRecord>) -> Vec<(String, &'static str)> {
-        validate(&submission(value), previous)
+        DataModelRecord::validate(&submission(value), previous)
             .unwrap_err()
             .into_iter()
             .map(|problem| (problem.path, problem.code))
@@ -355,7 +361,7 @@ mod tests {
 
     #[test]
     fn ids_are_assigned_by_element_kind() {
-        let record = validate(&example(), None).unwrap();
+        let record = DataModelRecord::validate(&example(), None).unwrap();
         let order = &record.entities[0];
         let ids = [
             (&order.id, 'e'),
@@ -376,7 +382,7 @@ mod tests {
 
     #[test]
     fn relation_target_by_name_resolves_to_the_entity_id() {
-        let record = validate(&example(), None).unwrap();
+        let record = DataModelRecord::validate(&example(), None).unwrap();
         assert_eq!(
             record.entities[0].relations[0].target,
             record.entities[1].id
@@ -385,7 +391,7 @@ mod tests {
 
     #[test]
     fn record_serializes_in_struct_order_with_defaults() {
-        let record = validate(
+        let record = DataModelRecord::validate(
             &submission(json!({
                 "entities": [{
                     "name": "Order",
@@ -482,7 +488,7 @@ mod tests {
 
     #[test]
     fn any_id_on_a_first_submission_is_unknown() {
-        let problems = validate(
+        let problems = DataModelRecord::validate(
             &submission(json!({
                 "entities": [{"id": "eaaaaaaaaaaa", "name": "Order"}]
             })),
@@ -496,8 +502,20 @@ mod tests {
     }
 
     #[test]
+    fn ids_agree_with_the_ids_of_elements() {
+        let record = DataModelRecord::validate(&example(), None).unwrap();
+        let expected: Vec<_> = record
+            .elements()
+            .into_iter()
+            .map(|element| (element.id, element.kind))
+            .collect();
+        assert!(!expected.is_empty());
+        assert_eq!(record.ids(), expected);
+    }
+
+    #[test]
     fn ids_of_the_previous_version_are_kept() {
-        let first = validate(&example(), None).unwrap();
+        let first = DataModelRecord::validate(&example(), None).unwrap();
         let order = &first.entities[0];
         let next = json!({
             "entities": [{
@@ -508,7 +526,7 @@ mod tests {
             }]
         });
 
-        let record = validate(&submission(next), Some(&first)).unwrap();
+        let record = DataModelRecord::validate(&submission(next), Some(&first)).unwrap();
         let entity = &record.entities[0];
         assert_eq!(entity.id, order.id);
         assert_eq!(entity.fields[0].id, order.fields[0].id);
@@ -518,7 +536,7 @@ mod tests {
 
     #[test]
     fn stored_record_reads_back_equal() {
-        let record = validate(&example(), None).unwrap();
+        let record = DataModelRecord::validate(&example(), None).unwrap();
         let text = serde_json::to_string(&record).unwrap();
         assert_eq!(
             serde_json::from_str::<DataModelRecord>(&text).unwrap(),
@@ -528,7 +546,7 @@ mod tests {
 
     #[test]
     fn elements_carry_their_parent_and_compared_attributes() {
-        let record = validate(&example(), None).unwrap();
+        let record = DataModelRecord::validate(&example(), None).unwrap();
         let order = &record.entities[0];
         let elements: Vec<(&str, String, Value)> = record
             .elements()
@@ -568,10 +586,10 @@ mod tests {
     /// Validates the stored form of the example, changed by `edit`, as its next version, and
     /// returns both versions.
     fn next_version(edit: impl FnOnce(&mut Value)) -> (DataModelRecord, DataModelRecord) {
-        let first = validate(&example(), None).unwrap();
+        let first = DataModelRecord::validate(&example(), None).unwrap();
         let mut value = serde_json::to_value(&first).unwrap();
         edit(&mut value);
-        let next = validate(&submission(value), Some(&first)).unwrap();
+        let next = DataModelRecord::validate(&submission(value), Some(&first)).unwrap();
         (first, next)
     }
 
@@ -603,8 +621,8 @@ mod tests {
 
     #[test]
     fn diff_of_a_resubmission_without_ids_replaces_every_element() {
-        let first = validate(&example(), None).unwrap();
-        let next = validate(&example(), Some(&first)).unwrap();
+        let first = DataModelRecord::validate(&example(), None).unwrap();
+        let next = DataModelRecord::validate(&example(), Some(&first)).unwrap();
         let changes = diff::diff(&first, &next);
         let ids = |record: &DataModelRecord| -> Vec<String> {
             record
@@ -655,7 +673,7 @@ mod tests {
 
     #[test]
     fn ids_of_another_kind_or_used_twice_are_rejected() {
-        let first = validate(&example(), None).unwrap();
+        let first = DataModelRecord::validate(&example(), None).unwrap();
         let order = &first.entities[0];
         let customer = &first.entities[1];
         let next = json!({

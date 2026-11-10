@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use super::check::{Check, Element};
-use super::diff::{self, Record};
+use super::check::{Check, ElementKind, Site};
+use super::diff::{self, Diffable};
 use super::{Problem, Typed};
 
 /// An interface record as submitted. Unknown keys are collected rather than refused by serde, so
@@ -26,7 +26,7 @@ struct OperationSubmission {
     #[serde(default)]
     outputs: Vec<ParameterSubmission>,
     #[serde(default)]
-    errors: Vec<ErrorSubmission>,
+    errors: Vec<DeclaredErrorSubmission>,
     #[serde(flatten)]
     unknown: Map<String, Value>,
 }
@@ -42,7 +42,7 @@ struct ParameterSubmission {
 }
 
 #[derive(Debug, Deserialize)]
-struct ErrorSubmission {
+struct DeclaredErrorSubmission {
     id: Option<String>,
     name: Option<String>,
     condition: Option<String>,
@@ -64,7 +64,7 @@ pub(super) struct Operation {
     pub(super) description: Option<String>,
     pub(super) inputs: Vec<Parameter>,
     pub(super) outputs: Vec<Parameter>,
-    pub(super) errors: Vec<Error>,
+    pub(super) errors: Vec<DeclaredError>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -76,17 +76,17 @@ pub(super) struct Parameter {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub(super) struct Error {
+pub(super) struct DeclaredError {
     pub(super) id: String,
     pub(super) name: String,
     pub(super) condition: String,
 }
 
-impl Record for InterfaceRecord {
+impl Diffable for InterfaceRecord {
     fn elements(&self) -> Vec<diff::Element> {
         let mut elements = Vec::new();
         for operation in &self.operations {
-            elements.push(Element::Operation.for_diff(
+            elements.push(ElementKind::Operation.for_diff(
                 &operation.id,
                 [
                     ("name", json!(operation.name)),
@@ -94,8 +94,8 @@ impl Record for InterfaceRecord {
                 ],
             ));
             for (element, parameters) in [
-                (Element::Input, &operation.inputs),
-                (Element::Output, &operation.outputs),
+                (ElementKind::Input, &operation.inputs),
+                (ElementKind::Output, &operation.outputs),
             ] {
                 elements.extend(parameters.iter().map(|parameter| {
                     element.for_diff(
@@ -110,7 +110,7 @@ impl Record for InterfaceRecord {
                 }));
             }
             elements.extend(operation.errors.iter().map(|error| {
-                Element::Error.for_diff(
+                ElementKind::Error.for_diff(
                     &error.id,
                     [
                         ("parent", json!(operation.id)),
@@ -122,6 +122,30 @@ impl Record for InterfaceRecord {
         }
         elements
     }
+
+    fn ids(&self) -> Vec<(String, &'static str)> {
+        let mut ids = Vec::new();
+        for operation in &self.operations {
+            ids.push((operation.id.clone(), ElementKind::Operation.noun()));
+            for (element, parameters) in [
+                (ElementKind::Input, &operation.inputs),
+                (ElementKind::Output, &operation.outputs),
+            ] {
+                ids.extend(
+                    parameters
+                        .iter()
+                        .map(|parameter| (parameter.id.clone(), element.noun())),
+                );
+            }
+            ids.extend(
+                operation
+                    .errors
+                    .iter()
+                    .map(|error| (error.id.clone(), ElementKind::Error.noun())),
+            );
+        }
+        ids
+    }
 }
 
 impl Typed for InterfaceRecord {
@@ -131,29 +155,19 @@ impl Typed for InterfaceRecord {
         submission: &InterfaceSubmission,
         previous: Option<&Self>,
     ) -> Result<Self, Vec<Problem>> {
-        validate(submission, previous)
+        let mut check = Check::new(previous);
+        check.unknown_record_keys(&submission.unknown, "an interface record");
+        let mut names = HashSet::new();
+        let operations = submission
+            .operations
+            .iter()
+            .enumerate()
+            .map(|(index, operation)| {
+                operation.validate(&mut check, &mut names, &format!("/operations/{index}"))
+            })
+            .collect();
+        check.finish(InterfaceRecord { operations })
     }
-}
-
-/// Validates `submission` and assigns ids to new elements in one pass. `previous` is the newest
-/// stored record of the same design, whose ids a submission may keep. Problems are listed in
-/// document order, each element's own before its children's.
-pub fn validate(
-    submission: &InterfaceSubmission,
-    previous: Option<&InterfaceRecord>,
-) -> Result<InterfaceRecord, Vec<Problem>> {
-    let mut check = Check::new(previous);
-    check.unknown_keys(&submission.unknown, "", None, "an interface record");
-    let mut names = HashSet::new();
-    let operations = submission
-        .operations
-        .iter()
-        .enumerate()
-        .map(|(index, operation)| {
-            operation.validate(&mut check, &mut names, &format!("/operations/{index}"))
-        })
-        .collect();
-    check.finish(InterfaceRecord { operations })
 }
 
 impl OperationSubmission {
@@ -164,25 +178,24 @@ impl OperationSubmission {
         path: &str,
     ) -> Operation {
         let supplied = self.id.as_deref();
-        check.id(Element::Operation, supplied, path);
-        let name = check.name(
-            siblings,
-            Element::Operation,
-            self.name.as_deref(),
+        let site = Site {
+            element: ElementKind::Operation,
             path,
-            supplied,
-        );
-        check.unknown_keys(&self.unknown, path, supplied, "an operation");
+            id: supplied,
+        };
+        check.id(&site);
+        let name = check.name(&site, siblings, self.name.as_deref());
+        check.unknown_keys(&site, &self.unknown);
 
         let inputs = parameters(
             check,
-            Element::Input,
+            ElementKind::Input,
             &self.inputs,
             &format!("{path}/inputs"),
         );
         let outputs = parameters(
             check,
-            Element::Output,
+            ElementKind::Output,
             &self.outputs,
             &format!("{path}/outputs"),
         );
@@ -196,7 +209,7 @@ impl OperationSubmission {
             })
             .collect();
         Operation {
-            id: Element::Operation.assign(supplied),
+            id: ElementKind::Operation.assign(supplied),
             name,
             description: self.description.clone(),
             inputs,
@@ -210,7 +223,7 @@ impl OperationSubmission {
 /// themselves.
 fn parameters<'a>(
     check: &mut Check<'a>,
-    element: Element,
+    element: ElementKind,
     list: &'a [ParameterSubmission],
     path: &str,
 ) -> Vec<Parameter> {
@@ -228,22 +241,19 @@ impl ParameterSubmission {
         &'a self,
         check: &mut Check<'a>,
         siblings: &mut HashSet<&'a str>,
-        element: Element,
+        element: ElementKind,
         path: &str,
     ) -> Parameter {
         let supplied = self.id.as_deref();
-        check.id(element, supplied, path);
-        let name = check.name(siblings, element, self.name.as_deref(), path, supplied);
-        let r#type = check.required(
+        let site = Site {
             element,
-            "type",
-            "missing-type",
-            self.r#type.as_deref(),
             path,
-            supplied,
-        );
-        let noun = format!("an {}", element.noun());
-        check.unknown_keys(&self.unknown, path, supplied, &noun);
+            id: supplied,
+        };
+        check.id(&site);
+        let name = check.name(&site, siblings, self.name.as_deref());
+        let r#type = check.required(&site, "type", "missing-type", self.r#type.as_deref());
+        check.unknown_keys(&site, &self.unknown);
         Parameter {
             id: element.assign(supplied),
             name,
@@ -253,33 +263,30 @@ impl ParameterSubmission {
     }
 }
 
-impl ErrorSubmission {
+impl DeclaredErrorSubmission {
     fn validate<'a>(
         &'a self,
         check: &mut Check<'a>,
         siblings: &mut HashSet<&'a str>,
         path: &str,
-    ) -> Error {
+    ) -> DeclaredError {
         let supplied = self.id.as_deref();
-        check.id(Element::Error, supplied, path);
-        let name = check.name(
-            siblings,
-            Element::Error,
-            self.name.as_deref(),
+        let site = Site {
+            element: ElementKind::Error,
             path,
-            supplied,
-        );
+            id: supplied,
+        };
+        check.id(&site);
+        let name = check.name(&site, siblings, self.name.as_deref());
         let condition = check.required(
-            Element::Error,
+            &site,
             "condition",
             "missing-condition",
             self.condition.as_deref(),
-            path,
-            supplied,
         );
-        check.unknown_keys(&self.unknown, path, supplied, "an error");
-        Error {
-            id: Element::Error.assign(supplied),
+        check.unknown_keys(&site, &self.unknown);
+        DeclaredError {
+            id: ElementKind::Error.assign(supplied),
             name,
             condition,
         }
@@ -315,7 +322,7 @@ mod tests {
     }
 
     fn problems(value: Value, previous: Option<&InterfaceRecord>) -> Vec<(String, &'static str)> {
-        validate(&submission(value), previous)
+        InterfaceRecord::validate(&submission(value), previous)
             .unwrap_err()
             .into_iter()
             .map(|problem| (problem.path, problem.code))
@@ -339,7 +346,7 @@ mod tests {
 
     #[test]
     fn ids_are_assigned_by_element_kind() {
-        let record = validate(&example(), None).unwrap();
+        let record = InterfaceRecord::validate(&example(), None).unwrap();
         let prefixes: String = ids(&record)
             .iter()
             .map(|id| {
@@ -356,7 +363,7 @@ mod tests {
 
     #[test]
     fn record_serializes_in_struct_order_with_defaults() {
-        let record = validate(
+        let record = InterfaceRecord::validate(
             &submission(json!({
                 "operations": [{
                     "inputs": [{"type": "uuid", "name": "id"}],
@@ -384,7 +391,7 @@ mod tests {
 
     #[test]
     fn stored_record_reads_back_equal() {
-        let record = validate(&example(), None).unwrap();
+        let record = InterfaceRecord::validate(&example(), None).unwrap();
         let text = serde_json::to_string(&record).unwrap();
         assert_eq!(
             serde_json::from_str::<InterfaceRecord>(&text).unwrap(),
@@ -474,16 +481,28 @@ mod tests {
     }
 
     #[test]
+    fn ids_agree_with_the_ids_of_elements() {
+        let record = InterfaceRecord::validate(&example(), None).unwrap();
+        let expected: Vec<_> = record
+            .elements()
+            .into_iter()
+            .map(|element| (element.id, element.kind))
+            .collect();
+        assert!(!expected.is_empty());
+        assert_eq!(record.ids(), expected);
+    }
+
+    #[test]
     fn ids_of_the_previous_version_are_kept() {
-        let first = validate(&example(), None).unwrap();
+        let first = InterfaceRecord::validate(&example(), None).unwrap();
         let value = serde_json::to_value(&first).unwrap();
-        let next = validate(&submission(value), Some(&first)).unwrap();
+        let next = InterfaceRecord::validate(&submission(value), Some(&first)).unwrap();
         assert_eq!(next, first);
     }
 
     #[test]
     fn ids_of_another_kind_or_used_twice_are_rejected() {
-        let first = validate(&example(), None).unwrap();
+        let first = InterfaceRecord::validate(&example(), None).unwrap();
         let create = &first.operations[0];
         let next = json!({
             "operations": [
@@ -511,7 +530,7 @@ mod tests {
 
     #[test]
     fn elements_carry_their_parent_and_compared_attributes() {
-        let record = validate(&example(), None).unwrap();
+        let record = InterfaceRecord::validate(&example(), None).unwrap();
         let create = &record.operations[0];
         let elements: Vec<(&str, Value)> = record
             .elements()
@@ -544,10 +563,10 @@ mod tests {
     /// Validates the stored form of the example, changed by `edit`, as its next version, and
     /// returns both versions.
     fn next_version(edit: impl FnOnce(&mut Value)) -> (InterfaceRecord, InterfaceRecord) {
-        let first = validate(&example(), None).unwrap();
+        let first = InterfaceRecord::validate(&example(), None).unwrap();
         let mut value = serde_json::to_value(&first).unwrap();
         edit(&mut value);
-        let next = validate(&submission(value), Some(&first)).unwrap();
+        let next = InterfaceRecord::validate(&submission(value), Some(&first)).unwrap();
         (first, next)
     }
 

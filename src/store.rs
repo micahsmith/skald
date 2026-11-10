@@ -4,6 +4,13 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 
 use crate::error::SkaldError;
 
+/// The one place that spells the timestamp format stored in the database.
+pub fn now(conn: &Connection) -> rusqlite::Result<String> {
+    conn.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')", [], |row| {
+        row.get(0)
+    })
+}
+
 /// SQL per schema version. Index 0 is version 1.
 const MIGRATIONS: &[&str] = &["
     CREATE TABLE repository (
@@ -21,7 +28,7 @@ const MIGRATIONS: &[&str] = &["
         created_at TEXT NOT NULL,
         UNIQUE (repository, name)
     );
-    CREATE INDEX design_repository ON design (repository);
+    CREATE INDEX design_created ON design (repository, created_at);
     CREATE TABLE design_version (
         design TEXT NOT NULL,
         number INTEGER NOT NULL,
@@ -50,7 +57,7 @@ impl Store {
     /// Opens `<data_dir>/skald.db`, creating the directory and the file as needed, and migrates
     /// it to the newest schema.
     pub fn open(data_dir: &Path) -> Result<Self, SkaldError> {
-        std::fs::create_dir_all(data_dir).map_err(|err| {
+        crate::paths::create_data_dir(data_dir).map_err(|err| {
             SkaldError::new(
                 "store-unavailable",
                 format!("cannot create {}: {err}", data_dir.display()),
@@ -107,6 +114,15 @@ impl Store {
         Ok(self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?)
+    }
+
+    /// Takes no lock until the first read, so that processes that only read never wait on each
+    /// other. A write inside it fails at once with SQLITE_BUSY when another process holds the
+    /// write lock, so it MUST NOT write.
+    pub fn read_transaction(&mut self) -> Result<Transaction<'_>, SkaldError> {
+        Ok(self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Deferred)?)
     }
 }
 

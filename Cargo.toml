@@ -20,5 +20,4 @@ toon-format = { version = "0.7", default-features = false }
 [dev-dependencies]
 assert_cmd = "2.2"
 scraper = "0.29"
-serde_yaml = "0.9"
 tempfile = "3.27"

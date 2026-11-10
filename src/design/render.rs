@@ -12,8 +12,14 @@ const TEXT_INSET: usize = 12;
 const NAME_BASELINE: usize = 21;
 const FIELD_BASELINE: usize = 14;
 const LOOP_WIDTH: f64 = 20.0;
+const LOOP_LABEL_GAP: f64 = 10.0;
 const LABEL_BACK: f64 = 16.0;
 const LABEL_SIDE: f64 = 8.0;
+const EDGE_SPACING: f64 = 8.0;
+const EDGE_SPREAD: f64 = 28.0;
+const LOOP_SPAN: f64 = 24.0;
+const LOOP_GAP: f64 = 4.0;
+const LOOP_HEIGHT: f64 = 16.0;
 
 const PAGE_STYLE: &str = "\
 body { margin: 24px; font: 14px/1.4 system-ui, sans-serif; color: #1f2328; background: #fff; }
@@ -91,15 +97,35 @@ fn diagram(model: &DataModelRecord) -> String {
         .enumerate()
         .map(|(index, entity)| (entity.id.as_str(), index))
         .collect();
+    let key = |source: usize, target: usize| (source.min(target), source.max(target));
+    let mut sizes: HashMap<(usize, usize), usize> = HashMap::new();
+    for (source, entity) in entities.iter().enumerate() {
+        for target in entity
+            .relations
+            .iter()
+            .filter_map(|r| index.get(r.target.as_str()))
+        {
+            *sizes.entry(key(source, *target)).or_default() += 1;
+        }
+    }
+    let mut seen: HashMap<(usize, usize), usize> = HashMap::new();
     for (source, (entity, from)) in entities.iter().zip(&frames).enumerate() {
         for relation in &entity.relations {
             let Some(&target) = index.get(relation.target.as_str()) else {
                 continue;
             };
+            let pair = key(source, target);
+            let position = seen.entry(pair).or_default();
+            let (slot, count) = (*position, sizes[&pair]);
+            *position += 1;
             let edge = if target == source {
-                Edge::self_loop(from)
+                Edge::self_loop(from, slot, count)
             } else {
-                Edge::straight(from, &frames[target])
+                // The offset is measured from the lower entity index to the higher.
+                let side = if source < target { 1.0 } else { -1.0 };
+                let spacing = EDGE_SPACING.min(EDGE_SPREAD / (count - 1).max(1) as f64);
+                let offset = side * (slot as f64 - (count - 1) as f64 / 2.0) * spacing;
+                Edge::straight(from, &frames[target], offset)
             };
             svg.push_str(&edge.markup(relation));
         }
@@ -138,11 +164,13 @@ impl Frame {
         )
     }
 
-    /// The fraction of the vector (dx, dy) that leads from the center of this box to its edge.
-    fn exit(&self, dx: f64, dy: f64) -> f64 {
+    /// The fraction of the vector (dx, dy) that leads from the point (ox, oy), measured from the
+    /// center of this box, to its edge.
+    fn exit(&self, dx: f64, dy: f64, ox: f64, oy: f64) -> f64 {
         let half_width = (BOX_WIDTH as f64) / 2.0;
         let half_height = (self.height as f64) / 2.0;
-        (half_width / dx.abs()).min(half_height / dy.abs())
+        ((half_width - ox * dx.signum()) / dx.abs())
+            .min((half_height - oy * dy.signum()) / dy.abs())
     }
 }
 
@@ -195,18 +223,20 @@ struct Edge {
 }
 
 impl Edge {
-    /// The segment between the box centers, cut at each box edge. The label sits beside the
-    /// target end.
-    fn straight(from: &Frame, to: &Frame) -> Self {
+    /// The segment between the box centers, cut at each box edge and shifted sideways by
+    /// `offset`. The label sits beside the target end.
+    fn straight(from: &Frame, to: &Frame, offset: f64) -> Self {
         let (x1, y1) = from.center();
         let (x2, y2) = to.center();
         let (dx, dy) = (x2 - x1, y2 - y1);
-        let (out, into) = (from.exit(dx, dy), to.exit(dx, dy));
-        let end = (x2 - dx * into, y2 - dy * into);
         let length = (dx * dx + dy * dy).sqrt();
         let (ux, uy) = (dx / length, dy / length);
+        let (ox, oy) = (-uy * offset, ux * offset);
+        let out = from.exit(dx, dy, ox, oy);
+        let into = to.exit(-dx, -dy, ox, oy);
+        let end = (x2 + ox - dx * into, y2 + oy - dy * into);
         Self {
-            points: vec![(x1 + dx * out, y1 + dy * out), end],
+            points: vec![(x1 + ox + dx * out, y1 + oy + dy * out), end],
             label: (
                 end.0 - LABEL_BACK * ux + LABEL_SIDE * uy,
                 end.1 - LABEL_BACK * uy - LABEL_SIDE * ux,
@@ -215,15 +245,18 @@ impl Edge {
     }
 
     /// A loop out of the right side of the box and back, because a straight segment from a box
-    /// to itself has no length.
-    fn self_loop(frame: &Frame) -> Self {
+    /// to itself has no length. Loop `slot` of `count` is stacked below the one before it.
+    fn self_loop(frame: &Frame, slot: usize, count: usize) -> Self {
         let right = (frame.x + BOX_WIDTH) as f64;
         let outer = right + LOOP_WIDTH;
-        let top = (frame.y + 8) as f64;
-        let bottom = (frame.y + 24) as f64;
+        let gaps = LOOP_GAP * (count - 1) as f64;
+        let height = LOOP_HEIGHT.min((LOOP_SPAN - gaps) / count as f64);
+        let first = (TITLE_HEIGHT as f64 - (count as f64 * height + gaps)) / 2.0;
+        let top = frame.y as f64 + first + slot as f64 * (height + LOOP_GAP);
+        let bottom = top + height;
         Self {
             points: vec![(right, top), (outer, top), (outer, bottom), (right, bottom)],
-            label: (outer + 10.0, (top + bottom) / 2.0),
+            label: (outer + LOOP_LABEL_GAP, (top + bottom) / 2.0),
         }
     }
 
@@ -354,7 +387,7 @@ mod tests {
         )
     }
 
-    /// The plan's example record with fixed ids.
+    /// Two entities, Order and Customer, joined by one relation, with fixed ids.
     fn example() -> Value {
         json!({
             "entities": [
@@ -519,6 +552,68 @@ mod tests {
             r#"<text class="cardinality" x="300" y="46">*</text>"#,
         );
         assert!(page.contains(edge), "{page}");
+    }
+
+    /// The `d` value and the label position of each relation, in document order.
+    fn strokes(page: &str) -> Vec<(String, String)> {
+        let mut strokes = Vec::new();
+        for path in page.split("<path data-kind=\"relation\"").skip(1) {
+            let d = path
+                .split(" d=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap();
+            let label = path.split("<text class=\"cardinality\" ").nth(1).unwrap();
+            let label = label.split('>').next().unwrap();
+            // Sorted points, so that a reversed path counts as the same stroke.
+            let mut points: Vec<&str> = d.split(['M', 'L']).map(str::trim).collect();
+            points.sort_unstable();
+            strokes.push((points.join(","), label.to_string()));
+        }
+        strokes
+    }
+
+    fn assert_distinct(page: &str, expected: usize) {
+        let strokes = strokes(page);
+        assert_eq!(strokes.len(), expected, "{page}");
+        for (index, a) in strokes.iter().enumerate() {
+            for b in &strokes[index + 1..] {
+                assert_ne!(a.0, b.0, "{page}");
+                assert_ne!(a.1, b.1, "{page}");
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_relations_get_their_own_stroke_and_label() {
+        let mut record = example();
+        record["entities"][0]["relations"] = json!([
+            {"id": "r1", "target": "e2", "cardinality": "one", "name": "billing"},
+            {"id": "r2", "target": "e2", "cardinality": "many", "name": "shipping"}
+        ]);
+        assert_distinct(&page(record), 2);
+    }
+
+    #[test]
+    fn opposite_relations_get_their_own_stroke_and_label() {
+        let mut record = entities(2);
+        record["entities"][0]["relations"] =
+            json!([{"id": "r1", "target": "e1", "cardinality": "one"}]);
+        record["entities"][1]["relations"] =
+            json!([{"id": "r2", "target": "e0", "cardinality": "many"}]);
+        assert_distinct(&page(record), 2);
+    }
+
+    #[test]
+    fn self_relations_on_one_entity_do_not_overlap() {
+        let mut record = entities(1);
+        record["entities"][0]["relations"] = json!([
+            {"id": "r1", "target": "e0", "cardinality": "many"},
+            {"id": "r2", "target": "e0", "cardinality": "one"}
+        ]);
+        assert_distinct(&page(record), 2);
     }
 
     #[test]
