@@ -1,4 +1,4 @@
-# cc-loadout
+# skald
 
 Skills and hooks library for Claude Code and other agents.
 
@@ -8,16 +8,16 @@ Give the prompt below to your agent. Use the same prompt to install, update, or 
 replaces any earlier copy, so every run ends in the same state.
 
 ```text
-Install the `code-skillset` plugin from https://github.com/micahsmith/cc-loadout. Follow these
-steps in order:
+Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
+order:
 
 1. Fetch the latest commit of the default branch over HTTPS. Assume you do not have access to SSH.
-2. Remove every earlier installation of `code-skillset`, including cached copies and any
+2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or
    `cc-loadout` marketplace entry. Leave everything else in place.
 3. Install at the user level, using the native install mechanism of the agent you are running in:
-   - If the agent supports Claude Code plugin marketplaces, add the repository as the `cc-loadout`
-     marketplace by its HTTPS URL. Then install `code-skillset@cc-loadout`. This step also installs
-     the hooks.
+   - If the agent supports Claude Code plugin marketplaces, add the repository as the `skald`
+     marketplace by its HTTPS URL. Then install `code-skillset@skald`. This step also installs the
+     hooks.
    - Otherwise, install each directory under `skills/` as a skill. Keep each directory name and its
      contents unchanged. Then register the hooks in `hooks/` with the agent's equivalent of a
      session-start hook. If the agent has no equivalent, skip the hooks. Ask for confirmation before

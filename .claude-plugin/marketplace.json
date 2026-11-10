@@ -1,5 +1,5 @@
 {
-  "name": "cc-loadout",
+  "name": "skald",
   "description": "custom marketplace",
   "owner": {
     "name": "micah smith"
@@ -14,7 +14,7 @@
       },
       "category": "development",
       "source": "./",
-      "homepage": "https://github.com/micahsmith/cc-loadout"
+      "homepage": "https://github.com/micahsmith/skald"
     }
   ]
 }
