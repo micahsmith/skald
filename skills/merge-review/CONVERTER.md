@@ -1,7 +1,9 @@
 # Converter Brief
 
 You convert one finding from another review into one issue for a `deep-review` report. Your prompt
-names the report path, the finding, and the ID of the new issue.
+names the report path, the finding, and the ID of the new issue. It MAY also give a row of the
+report's "Considered, Not Reported" table, where a `deep-review` reviewer recorded the same problem
+and the reason for not reporting it.
 
 ## Rules
 
@@ -18,7 +20,9 @@ names the report path, the finding, and the ID of the new issue.
    Context can name the job the code does for the branch. Skip the existing issues.
 3. **Read the code.** Read the code at the finding's location in the working tree. The code may have
    moved, so search by content if the line numbers are off.
-4. **Write the issue.** Fill each field by the rules below, in the format under "Issue Format".
+4. **Check the row.** If your prompt gives a row, read the document section, test, or code that the
+   row's `Detail` cites. Decide whether that evidence settles the finding.
+5. **Write the issue.** Fill each field by the rules below, in the format under "Issue Format".
 
 ## Field Rules
 
@@ -27,7 +31,8 @@ names the report path, the finding, and the ID of the new issue.
 | ID | `EXT-<n>`, from your prompt. |
 | Title | One line, rewritten in plain language. |
 | Severity | Assigned on the `deep-review` scale from the scenario and the code. |
-| Confidence | `CONFIRMED` → High and `PLAUSIBLE` → Medium, as `code-review` labels them. If the finding has no label, judge the confidence yourself. Medium or Low always carries a Confidence Note, as the format requires. |
+| Confidence | `CONFIRMED` → High and `PLAUSIBLE` → Medium, as `code-review` labels them. If the finding has no label, judge the confidence yourself. If the row's evidence settles the finding, Low. Medium or Low always carries a Confidence Note, as the format requires. |
+| Confidence Note | If your prompt gives a row, write the note at any confidence. Name the row's reviewer and reason, then state whether the cited evidence settles the finding, and why. |
 | Location | From the finding, checked against the code. |
 | Context | Written from the code, as the format requires. |
 | Failure Scenario | From the finding if present. Otherwise write it yourself. |
