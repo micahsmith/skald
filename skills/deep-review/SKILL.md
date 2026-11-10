@@ -130,6 +130,9 @@ The six focuses:
   - Excessive or trivial comments on well-written code
   - Violation of any rules provided in `AGENTS.md`, `CLAUDE.md`, and the like
 
+  For each rule in those files that requires a test, the style reviewer MUST find the changed code
+  that the rule covers. The reviewer reports each piece of that code that has no such test.
+
 On top of their passes, the logic, compatibility, and design reviewers MUST apply the scenario rule:
 
 1. For each candidate problem, write the concrete scenario. For a logic, edge case, or error
