@@ -38,12 +38,6 @@ Hooks that ship as part of the plugin are located in `plugin/hooks`.
   in order to reduce complexity.
 - Before writing or editing a skill, read `plugin/skills/write-skill/GUIDELINES.md`. Every skill
   MUST follow it.
-- Skills that write files MUST try to resolve save location using the same convention. These
-  skills MUST NOT use `mktemp` or a system temp directory outside a bundled script. Instructions
-  on file path resolution MUST be duplicated inline for any skill that writes files. Any change to
-  this convention MUST be synced across all skills. The order for resolving save location is as
-  follows:
-  1. an output-specific directory established by convention (e.g., if the repository has a `specs/`
-     directory then specs MUST be written there)
-  2. an existing scratch directory (e.g., `tmp/`, `temp/`, `scratch/`, especially if git-ignored)
-  3. the repository root or the current working directory if not in a repository
+- A skill that saves to the knowledge base MUST contain the shared `knowledge-base` block in
+  `SKILL.md` and a copy of `plugin/hooks/knowledge-base.sh` in its `scripts/` folder.
+- Skills MUST NOT use `mktemp` or a system temp directory outside a bundled script.

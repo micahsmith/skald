@@ -49,18 +49,26 @@ Each issue has one status at a time:
 | `blocked` | The fixer could not finish. |
 | `skipped` | The user chose to leave the issue unfixed. |
 
+<!-- shared: knowledge-base -->
+
+## Knowledge Base
+
+Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
+repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
+`error`, show the error to the user and stop. Before the first save, run
+`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
+under `work/`, run `bash scripts/knowledge-base.sh index`.
+
+<!-- end shared -->
+
 ## Steps
 
 ### 1. Load the Report
 
-The argument is the path to the report. If the argument is missing, look for the newest
-`review-*.md` file. Search in this order:
-
-1. A directory conventionally used for reviews (`reviews/` or similar).
-2. An existing scratch directory at the repository root (`tmp/`, `temp/`, `scratch/`, or similar).
-3. The repository root, or the current working directory if not in a repository.
-
-If you found the report by search, confirm it with the user before you continue.
+The argument is the path to the report. If the argument is missing, find the newest report with
+`ls -t "<dir>"/work/*/review-*.md | head -1`, where `<dir>` is the `dir` of `knowledge_base`.
+Confirm the file you found with the user before you continue. If no file matches, ask the user for
+a path.
 
 List the issues without reading the whole report:
 
@@ -73,8 +81,8 @@ every ID.
 
 Check the working tree before any work starts:
 
-- The report is named `review-<target>-<date>.md`. If the current branch differs from `<target>`,
-  ask the user whether to continue.
+- The report is named `review-<target>-<date>.md`. Replace each `/` in the current branch name
+  with `-`. If the result differs from `<target>`, ask the user whether to continue.
 - If `git status --porcelain` shows uncommitted changes, list them to the user. State that the fixes
   will mix with those changes. Then continue.
 

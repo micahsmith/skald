@@ -11,25 +11,25 @@ context MUST be able to read the handoff and continue the work without additiona
 If an argument is provided, treat it as a description of the handoff's intended use and tailor the
 content toward that goal.
 
+<!-- shared: knowledge-base -->
+
+## Knowledge Base
+
+Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
+repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
+`error`, show the error to the user and stop. Before the first save, run
+`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
+under `work/`, run `bash scripts/knowledge-base.sh index`.
+
+<!-- end shared -->
+
 ## Save Location
 
-Resolve the base directory for the file as follows:
+Save the handoff to `handoffs/handoff-<summary>-<date>.md`, relative to the `dir` of
+`knowledge_base`. Create `handoffs/` if it is missing.
 
-1. **Handoffs Directory.** If the repository has a directory conventionally used for handoffs
-   (`handoffs/` or similar), use it.
-2. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
-   root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
-   repository.
-
-Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
-
-## Filename
-
-Name the file `handoff-<short-summary>-<date>.md`, where:
-
-- `<short-summary>` is at most three words in kebab-case describing the content.
-- `<date>` is obtained from the shell with `date +%F` (which yields `YYYY-MM-DD`).
+- `<summary>` is at most three words in kebab-case that describe the content.
+- `<date>` is the output of `date +%F`.
 
 ## What to Write
 

@@ -21,6 +21,18 @@ branch").
 
 Pass `--no-fetch` to the prep script when the user asks to skip the fetch or is offline.
 
+<!-- shared: knowledge-base -->
+
+## Knowledge Base
+
+Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
+repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
+`error`, show the error to the user and stop. Before the first save, run
+`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
+under `work/`, run `bash scripts/knowledge-base.sh index`.
+
+<!-- end shared -->
+
 ## Steps
 
 ### 1. Prepare
@@ -188,17 +200,12 @@ dropped the candidate and states that reviewer's reason. Keep every other row.
 
 ### 5. Final Report and Summary
 
-Write the full report to a file named `review-<target>-<date>.md`, where `<date>` is the output of
-`date +%F`. Resolve the base directory for the file as follows:
+Write the full report to `work/<name>/review-<target>-<date>.md`, relative to the `dir` of
+`knowledge_base`. Create `work/<name>/` if it is missing.
 
-1. **Reviews Directory.** If the repository has a directory conventionally used for reviews
-   (`reviews/` or similar), use it.
-2. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
-   root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-3. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
-   repository.
-
-Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
+- `<name>` is at most four words in kebab-case that describe the work. Choose it yourself.
+- `<target>` is `TARGET`, the reviewed branch, with each `/` replaced by `-`.
+- `<date>` is the output of `date +%F`.
 
 Report the file location to the user with a short summary of findings: the count of issues by
 severity, the top-level blocking issues, and the count of rows in the "Considered, Not Reported"
@@ -215,6 +222,8 @@ technical terms that developers commonly know, and avoid other jargon. A reader 
 understand each issue from the report alone.
 
 Use this format:
+
+<!-- shared: review-issue-format -->
 
 ```markdown
 ### [SEC-1] <one-line title>
@@ -244,6 +253,8 @@ list for alternatives.
 **Confidence Note:** (REQUIRED when Confidence is Medium or Low) Why confidence was not High and
 what ambiguity or intent needs to be resolved in order to confirm status.
 ```
+
+<!-- end shared -->
 
 Use one ID prefix per focus:
 

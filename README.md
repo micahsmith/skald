@@ -35,12 +35,17 @@ order:
 
 ## Hooks
 
-The hooks add these guides to the context at the start of every session and every subagent.
+The guides hook adds these guides to the context at the start of every session and every subagent.
 
 | Guide | Purpose |
 | --- | --- |
 | `how-to-write-comments` | Rules for writing code comments and doc comments. |
 | `how-to-write-prose` | Rules for technical writing that improve clarity and comprehension. |
+
+The knowledge base hook runs `knowledge-base.sh` at session start only. It prints the
+`knowledge_base` summary. The summary names the `.skald/` folder, where skills save and find their
+documents. An agent gets the summary only if its session-start hook adds plain output to the
+context. In every other agent, each skill runs its own copy of the script.
 
 ## Skills
 
@@ -106,6 +111,6 @@ These environment variables change where skald reads and writes files:
 | `tests/` | Integration tests that run the built binary, and checks of repository files. |
 | `plugin/` | The `code-skillset` plugin. |
 | `plugin/skills/` | One directory per skill. |
-| `plugin/hooks/` | The session hooks and the guides they print. |
+| `plugin/hooks/` | The session hooks `emit-guides.sh` and `knowledge-base.sh`, and the guides that `emit-guides.sh` prints. |
 | `.claude-plugin/marketplace.json` | The `skald` marketplace. Its one entry points at `./plugin`. |
 | `scripts/ci.sh` | Local CI: format, lint, tests, and a plugin smoke test. |

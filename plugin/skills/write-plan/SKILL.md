@@ -16,13 +16,25 @@ MUST end with a literal completion sentinel that the loop can detect.
 
 Every plan therefore encodes **decisions**, **slices**, **tests**, and an **end condition**.
 
-Plans MAY include code and implementation details, but ONLY when the plan cannot otherwise be
+Plans MAY include code and implementation details, but only when the plan cannot otherwise be
 executed successfully. Leave most implementation to the executing agent. The executor writes the
 code. The plan constrains only the choices that are costly to get wrong or that would drift from the
 agreed design.
 
-A full spec file is the preferred input, but it is NOT REQUIRED. If you lack the context to create a
+A full spec file is the preferred input, but it is OPTIONAL. If you lack the context to create a
 plan, use `/brainstorm` and `/write-spec` first.
+
+<!-- shared: knowledge-base -->
+
+## Knowledge Base
+
+Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
+repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
+`error`, show the error to the user and stop. Before the first save, run
+`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
+under `work/`, run `bash scripts/knowledge-base.sh index`.
+
+<!-- end shared -->
 
 ## Process
 
@@ -83,7 +95,7 @@ Write slices in order so that each one builds on its predecessors. Once its bloc
 each slice MUST be executable on its own.
 
 If the current code would make the feature slices hard to build, add a **prefactoring** slice first.
-A prefactoring slice restructures code without changing its behavior. Include this slice ONLY when
+A prefactoring slice restructures code without changing its behavior. Include this slice only when
 its value is high.
 
 Each slice MUST contain:
@@ -91,12 +103,12 @@ Each slice MUST contain:
 - **Title.** The title MUST describe the end-to-end behavior the slice delivers.
 - **Blocked By.** Slices that MUST be implemented before work can proceed, else "None".
 - **What to Build.** Behavior across the layers the slice intersects (e.g. schema, API, UI). The
-  constraints and invariants that MUST be followed. ONLY include code if it is the simplest way to
+  constraints and invariants that MUST be followed. Only include code if it is the simplest way to
   express the constraints and invariants.
 - **Decision Anchors.** Interfaces, signatures, and contracts that the implementation MUST satisfy.
 - **Test Cases.** One test case for each behavior. Tests MUST cover happy paths, edge cases, and
   error cases. Each test case states a **name**, **setup/preconditions**, **action** with concrete
-  inputs, and the **expected observable result** with concrete values. Do NOT write test code. See
+  inputs, and the **expected observable result** with concrete values. Do not write test code. See
   "Tests" for additional instructions.
 - **Checkpoint.** The observable state when the implementation is done, stated so that the executor
   can surface it as proof of completion (which tests have passed and which behavior is demoable).
@@ -120,32 +132,19 @@ Print this ONLY when all slice checkpoints are verified:
 
 ### Save Location
 
-Resolve the base directory for the plan as follows:
+Save the plan to `work/<name>/plan-<date>.md`, relative to the `dir` of `knowledge_base`. Create
+`work/<name>/` if it is missing.
 
-1. **Spec Directory.** If a spec for this work exists, write the plan into the SAME directory as the
-   spec.
-2. **Conventional Spec Directory.** If a directory conventionally used for plans or specs already
-   exists (`plans/`, `specs/`, `prds/`, or similar), use it.
-3. **Scratch Directory.** Otherwise, if an existing scratch directory is present at the repository
-   root (`tmp/`, `temp/`, `scratch/`, or similar, especially if git-ignored), use it.
-4. **Fallback.** Otherwise, use the repository root, or the current working directory if not in a
-   repository.
-
-If no spec exists, create a new directory inside the resolved base directory. Name the new directory
-in kebab-case, using at most four words that describe the work. Write the plan there.
-
-Use `mktemp` or a system temp directory ONLY inside a script bundled with this skill.
-
-### Filename
-
-Create the file named `plan-<date>.md`, where `<date>` is the output of `date +%F`.
+- If the spec is inside `work/`, save the plan in the spec's work folder. Otherwise, `<name>` is at
+  most four words in kebab-case that describe the work. Choose it yourself.
+- `<date>` is the output of `date +%F`.
 
 ### Splitting
 
 The default SHOULD be a single file. If the plan grows very large (>1500 lines), split the plan into
 a series of sibling files named `plan-<date>-<slice>.md` and keep the `plan-<date>.md` as the
 **index**. The index holds the header, the execution protocol, the slice list with ordering, and the
-completion report. It also points to every other plan file. Do NOT pre-split small plans.
+completion report. It also points to every other plan file. Do not pre-split small plans.
 
 ## Self-Review
 

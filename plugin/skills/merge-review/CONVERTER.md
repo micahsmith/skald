@@ -46,6 +46,8 @@ alone.
 
 Use this format:
 
+<!-- shared: review-issue-format -->
+
 ```markdown
 ### [SEC-1] <one-line title>
 - **Severity:** Blocking | Major | Suggestion | Style
@@ -74,3 +76,5 @@ list for alternatives.
 **Confidence Note:** (REQUIRED when Confidence is Medium or Low) Why confidence was not High and
 what ambiguity or intent needs to be resolved in order to confirm status.
 ```
+
+<!-- end shared -->

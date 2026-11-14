@@ -9,16 +9,24 @@ Merge findings from any other review into a `deep-review` report, so that `resol
 process every finding in one place. You are the coordinator. Converters read the code and write the
 new issues. You edit the report.
 
+<!-- shared: knowledge-base -->
+
+## Knowledge Base
+
+Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
+repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
+`error`, show the error to the user and stop. Before the first save, run
+`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
+under `work/`, run `bash scripts/knowledge-base.sh index`.
+
+<!-- end shared -->
+
 ## Arguments
 
-- `report-path`: the report to edit. If the argument is missing, look for the newest `review-*.md`
-  file. Search in this order:
-  1. A directory conventionally used for reviews (`reviews/` or similar).
-  2. An existing scratch directory at the repository root (`tmp/`, `temp/`, `scratch/`, or similar).
-  3. The repository root, or the current working directory if not in a repository.
-
-  Unless the argument exactly matches the file found, confirm the file you found with the user
-  before you continue.
+- `report-path`: the report to edit. If the argument is missing, find the newest report with
+  `ls -t "<dir>"/work/*/review-*.md | head -1`, where `<dir>` is the `dir` of `knowledge_base`.
+  Confirm the file you found with the user before you continue. If no file matches, ask the user
+  for a path.
 - `source`: the findings to merge. The source MAY be a file path, pasted text, or the findings from
   the most recent review in the conversation. Accept any shape. If you find no source, ask the user.
 
@@ -65,7 +73,7 @@ the existing issue. Place the bullet after the last reviewer field and any earli
 - **Also reported:** code-review — null `user` on the retry path crashes the handler.
 ```
 
-The source name is the tool or person the user names, else `external`. Do NOT convert a matched
+The source name is the tool or person the user names, else `external`. Do not convert a matched
 finding.
 
 Match each remaining finding against the rows of the "Considered, Not Reported" table by location
@@ -74,7 +82,7 @@ and claim. Judge a matched row from its text alone:
 - **The row answers the finding** when the reason is `Accepted by intent` and the cited section
   accepts the behavior that the finding calls wrong. The row also answers the finding when the
   reason is `No scenario` and `Detail` names a test or check that fails in the finding's scenario.
-  Append to the row's `Detail`: `Also reported: <source> — <the finding's claim>.` Do NOT convert
+  Append to the row's `Detail`: `Also reported: <source> — <the finding's claim>.` Do not convert
   the finding.
 - **Otherwise**, convert the finding in step 4, with the row.
 
