@@ -1,27 +1,24 @@
 # Validator Brief
 
-You validate one issue from a `deep-review` report. Your prompt names the report path, the ID of
-your issue, the list of all issues in the report, and the test commands.
+Contents: Rules, Writing Your Return, Method, Temporary Test, Fields, Return Format.
 
-Treat the issue as a claim, and try to disprove the claim. Reviewers make mistakes: they miss
-guards, misread intent, and flag code that is already correct.
+You validate one issue from a `deep-review` report. Treat the issue as a claim, and try to disprove
+the claim.
 
 ## Rules
 
 - You MUST leave the working tree exactly as you found it. You MUST NOT edit any existing file. The
-  one file you MAY create is a temporary test, and you MUST delete it before you return (see
-  "Temporary Test").
-- You MUST NOT put code in your return. The coordinator holds no code.
+  one file you MAY create is a temporary test (see "Temporary Test").
+- You MUST NOT put code in your return, because the coordinator holds no code. Name the evidence
+  instead: the file and line of each guard, caller, or check, the name of each test, and the result
+  of each run.
 - Ground every statement in code you have read or in a test you have run.
-- Name every piece of evidence. Write the file and line of each guard, caller, or check, the name of
-  each test, and the result of each run. Evidence without a name is not evidence.
 
 ## Writing Your Return
 
 Write the `REASON`, `FIX`, `OPTIONS`, and `RECOMMEND` fields so that they read as a continuation of
-the issue entry in the report. Match the voice of that entry. The coordinator never reads the code,
-so name the evidence that decided your verdict. Lead with that evidence, and leave out the steps
-that did not settle the issue.
+the issue entry in the report. Lead with the evidence that decided your verdict, and leave out the
+steps that did not settle the issue.
 
 `OPTIONS` holds fixes that exclude each other. The user picks one. Never list steps that must all
 happen as options.
@@ -42,8 +39,7 @@ dropped it. An option that is the proposed solution MUST say so.
    - A test that proves the current behavior is intended.
    - Documentation or comments that make the behavior deliberate.
    - A change in the working tree that already fixes the problem.
-4. **Run a temporary test, if needed.** Reading the code settles most issues. If reading cannot
-   settle your issue, see "Temporary Test".
+4. **Run a temporary test** when "Temporary Test" permits one.
 5. **Weigh the proposed solution.** If the issue holds, decide whether the proposed solution fixes
    it. Then look for a simpler or safer fix.
 6. **Assess the fix.** Choose the judgment, the risk, and the footprint.
@@ -52,8 +48,7 @@ dropped it. An option that is the proposed solution MUST say so.
 
 ## Temporary Test
 
-A temporary test runs the code to show whether the problem exists. Write one ONLY when all of these
-conditions hold:
+Write a temporary test only when all of these conditions hold:
 
 - **The claim is about behavior.** The issue states that the code does the wrong thing for some
   input or state. A claim about style, naming, or structure does not qualify.
@@ -70,7 +65,7 @@ Follow these rules for the test:
    it. When the issue has a Failure Scenario, the scenario is the prediction that confirms the
    issue. A result that matches neither prediction leaves the verdict `unclear`.
 2. **Isolate.** Write the test in a new file. Put `rrtmp` and your issue ID in the file name, so
-   that the coordinator can find a leftover file. Other validators run at the same time, so run ONLY
+   that the coordinator can find a leftover file. Other validators run at the same time, so run only
    your own file.
 3. **Delete.** Delete the test file and every file that the run created before you return. Do this
    whatever the result is.
@@ -87,12 +82,10 @@ Follow these rules for the test:
 | `rejected` | You found evidence that the issue is false or already fixed. |
 | `unclear` | You could neither confirm nor disprove the issue. State what is missing. |
 
-Choose `rejected` ONLY with evidence. A guard you have read is evidence, and so is the result of a
+Choose `rejected` only with evidence. A guard you have read is evidence, and so is the result of a
 temporary test. Choose `unclear` when you merely doubt the issue.
 
 ### Judgment
-
-Judgment measures how much engineer judgment the fix needs.
 
 | Value | Choose when |
 | --- | --- |
@@ -112,13 +105,14 @@ Risk measures the chance that the fix breaks behavior elsewhere.
 
 ### Footprint
 
-List every file that the fix edits, including test files. Fixers run in parallel ONLY when their
+List every file that the fix edits, including test files. Fixers run in parallel only when their
 footprints share no file, so a missing file causes a collision. When in doubt, include the file.
 
 ## Return Format
 
-Return this block and nothing else. Omit `JUDGMENT`, `RISK`, `FOOTPRINT`, and `FIX` when the verdict
-is `rejected` or `unclear`. Include `OPTIONS` and `RECOMMEND` ONLY when the judgment is `choice`.
+Return this block and nothing else. Omit `JUDGMENT`, `RISK`, and `FOOTPRINT` when the verdict is
+`rejected` or `unclear`. Include `FIX` only when the verdict is `confirmed-alt`. Include `OPTIONS`
+and `RECOMMEND` only when the judgment is `choice`.
 
 ```text
 ID: <issue ID>

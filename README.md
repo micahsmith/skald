@@ -14,16 +14,16 @@ Give the prompt below to your agent to install the plugin. Use the same prompt t
 or reinstall. Each run replaces any earlier copy, so every run ends in the same state.
 
 ```text
-Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps
-in order:
+Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
+order:
 
 1. Fetch the latest commit of the default branch over HTTPS. Assume you do not have access to SSH.
-2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or `cc-loadout`
-   marketplace entry. Leave everything else in place.
+2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or
+   `cc-loadout` marketplace entry. Leave everything else in place.
 3. Install at the user level, using the native install mechanism of the agent you are running in:
    - If the agent supports Claude Code plugin marketplaces, add the repository as the `skald`
-     marketplace by its HTTPS URL. Then install `code-skillset@skald`. This step also installs
-     the hooks.
+     marketplace by its HTTPS URL. Then install `code-skillset@skald`. This step also installs the
+     hooks.
    - Otherwise, install each directory under `plugin/skills/` as a skill. Keep each directory name
      and its contents unchanged. Then register the hooks in `plugin/hooks/` with the agent's
      equivalent of a session-start hook. If the agent has no equivalent, skip the hooks. Ask for
