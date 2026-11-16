@@ -46,15 +46,23 @@ under `work/`, run `bash scripts/knowledge-base.sh index`.
 3. **Interview & Iterate.** Present the draft. Confirm with the user before proceeding further. To
    resolve gaps, ask one question at a time.
 4. **Write.** Create the plan file (see "Output").
-5. **Review.** Scan the draft and fix problems inline (see "Self-Review").
-6. **Report.** Report the plan file path and a short summary of its contents.
+5. **Self-Review.** Scan the draft and fix problems inline (see "Self-Review").
+6. **Independent Review.** Have one fresh subagent check the plan (see "Independent Review").
+7. **Report.** Report the plan file path and a short summary of its contents. Also report:
+   - the count of findings by kind;
+   - the fixes you applied;
+   - each decision and the user's answer;
+   - each spec section that the plan now departs from, by the user's choice;
+   - `Spec coverage was not checked`, when no spec exists;
+   - `The review was not independent`, when you ran the review yourself.
 
 ## Plan Structure
 
 A plan has four parts:
 
 1. **Header.** The header includes the feature name, a one-sentence statement of the goal, a link to
-   the spec (if it exists), and the slice index with ordering.
+   the spec (if it exists), and the slice index with ordering. When the plan covers part of a spec,
+   the header also lists the IDs of the requirements and acceptance criteria that the plan covers.
 2. **Execution Protocol.** The standardized block (see "Execution Protocol").
 3. **Slices.** The work broken down into tracer-bullet style chunks.
 4. **Completion Sentinel.** The last part of the plan is the completion report template (see
@@ -151,14 +159,33 @@ completion report. It also points to every other plan file. Do not pre-split sma
 Before the final report, scan the draft and fix problems inline:
 
 - Placeholders or TODOs.
-- Missing test cases.
 - Test cases without concrete and observable results.
-- Missing edge/error cases.
 - Cyclic or contradictory slice ordering.
-- Decision anchors that contradict the spec.
 - Missing execution protocol or completion sentinel.
 
 The user will review the file conversationally.
+
+## Independent Review
+
+Start one fresh subagent: the reviewer. The reviewer starts without this conversation. Its prompt
+holds only five items: an instruction to follow the brief, and the absolute paths of
+[REVIEWER.md](REVIEWER.md), the plan, the spec when one exists, and the repository root. For a
+split plan, the plan path is the index file. The prompt MUST NOT contain the conversation, a
+summary of the design, or your concerns, because they carry your assumptions into the review.
+
+Start the reviewer once. Do not start it again after you apply fixes.
+
+If you cannot start a subagent, read [REVIEWER.md](REVIEWER.md) and run the review yourself.
+
+Act on each finding by its kind and by whether it has options, as the reviewer returned them. You
+MUST NOT change a finding's kind or options. Apply the fix of each finding that has one fix and is
+not a `contradiction`, without asking the user first. Present every `contradiction` and every
+finding with options to the user in one message. Give each `contradiction` two lettered options.
+Option A changes the plan to follow the spec. Option B keeps the plan and leaves the spec out of
+step. Recommend one option for each decision.
+
+Apply the user's answers to the plan. You MUST NOT edit the spec. Edit the plan only to apply a fix
+or an answer.
 
 ## Tests
 
