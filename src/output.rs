@@ -42,7 +42,7 @@ impl Output {
     }
 
     /// Adds help lines to a value. Raw text has no place for them.
-    pub fn with_help(mut self, lines: impl IntoIterator<Item = String>) -> Self {
+    pub fn with_help_lines(mut self, lines: impl IntoIterator<Item = String>) -> Self {
         if let Self::Value { help, .. } = &mut self {
             help.extend(lines);
         }
@@ -134,7 +134,7 @@ mod tests {
         let Value::Object(value) = json!({"id": "d123", "name": "orders"}) else {
             unreachable!()
         };
-        Output::new(value).with_help(["skald design get <id>".to_owned()])
+        Output::new(value).with_help_lines(["skald design get <id>".to_owned()])
     }
 
     #[test]

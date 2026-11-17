@@ -129,26 +129,6 @@ impl Diffable for DataModelRecord {
         }
         elements
     }
-
-    fn ids(&self) -> Vec<(String, ElementKind)> {
-        let mut ids = Vec::new();
-        for entity in &self.entities {
-            ids.push((entity.id.clone(), ElementKind::Entity));
-            ids.extend(
-                entity
-                    .fields
-                    .iter()
-                    .map(|field| (field.id.clone(), ElementKind::Field)),
-            );
-            ids.extend(
-                entity
-                    .relations
-                    .iter()
-                    .map(|relation| (relation.id.clone(), ElementKind::Relation)),
-            );
-        }
-        ids
-    }
 }
 
 impl Typed for DataModelRecord {
@@ -499,18 +479,6 @@ mod tests {
         assert_eq!(problems[0].path, "/entities/0");
         assert_eq!(problems[0].code, "unknown-id");
         assert_eq!(problems[0].id.as_deref(), Some("eaaaaaaaaaaa"));
-    }
-
-    #[test]
-    fn ids_agree_with_the_ids_of_elements() {
-        let record = DataModelRecord::validate(&example(), None).unwrap();
-        let expected: Vec<_> = record
-            .elements()
-            .into_iter()
-            .map(|element| (element.id, element.kind))
-            .collect();
-        assert!(!expected.is_empty());
-        assert_eq!(record.ids(), expected);
     }
 
     #[test]

@@ -93,7 +93,7 @@ pub fn run(no_plugin: bool) -> Result<Output, SkaldError> {
         help.push("skald setup".to_owned());
     }
     Ok(Output::new(value)
-        .with_help(help)
+        .with_help_lines(help)
         .with_exit_code(u8::from(failed)))
 }
 

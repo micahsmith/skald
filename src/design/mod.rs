@@ -241,7 +241,7 @@ fn submit(
             version - 1
         ));
     }
-    Ok(Output::new(view).with_help(help))
+    Ok(Output::new(view).with_help_lines(help))
 }
 
 /// Decodes and validates `text` against the newest stored record, and returns the canonical
@@ -401,7 +401,7 @@ fn list(
             help.push("skald design list --limit <n>");
         }
     }
-    Ok(Output::new(view).with_help(help.into_iter().map(String::from)))
+    Ok(Output::new(view).with_help_lines(help.into_iter().map(String::from)))
 }
 
 /// One stored version of a design.
@@ -492,7 +492,7 @@ fn get(
         }),
     );
     view.insert(key.to_owned(), content);
-    Ok(Output::new(view).with_help(help))
+    Ok(Output::new(view).with_help_lines(help))
 }
 
 /// Writes the rendered page to `out`, or to stdout when `out` is `-`.
@@ -591,7 +591,7 @@ fn open(
         "opened".to_owned(),
         json!({"design": id, "version": number, "url": url, "browser": browser}),
     );
-    Ok(Output::new(view).with_help([format!("skald design get {id} --version {number}")]))
+    Ok(Output::new(view).with_help_lines([format!("skald design get {id} --version {number}")]))
 }
 
 fn diff(store: &mut Store, cwd: &Path, id: &str, from: u32, to: u32) -> Result<Output, SkaldError> {
@@ -662,7 +662,7 @@ fn diff(store: &mut Store, cwd: &Path, id: &str, from: u32, to: u32) -> Result<O
             "changed": changes.changed,
         }),
     );
-    Ok(Output::new(view).with_help([format!("skald design get {id} --version {to}")]))
+    Ok(Output::new(view).with_help_lines([format!("skald design get {id} --version {to}")]))
 }
 
 fn changes<T: Typed>(id: &str, from: Option<&str>, to: Option<&str>) -> Result<Diff, SkaldError> {

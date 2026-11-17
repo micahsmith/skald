@@ -6,7 +6,12 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tiny_http::{Header, Response, Server};
 
+use crate::design;
 use crate::error::SkaldError;
+use crate::id;
+use crate::output::Output;
+use crate::paths;
+use crate::store::Store;
 
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 
@@ -15,7 +20,37 @@ const LAUNCHER_WAIT: Duration = Duration::from_secs(2);
 /// `skald serve` prints this before the URL, and `design open` reads it back.
 const URL_PREFIX: &str = "url: ";
 
-/// Serves `page` at `/` on 127.0.0.1 until no request has arrived for `idle_timeout` seconds.
+/// Serves a stored design version, or the page on stdin when `page_from_stdin` is set.
+pub fn run(
+    design: Option<String>,
+    version: Option<u32>,
+    page_from_stdin: bool,
+    port: u16,
+    idle_timeout: Option<u64>,
+    stdout: &mut impl Write,
+) -> Result<Output, SkaldError> {
+    let page = if page_from_stdin {
+        std::io::read_to_string(std::io::stdin())
+            .map_err(|err| failed(format!("cannot read the page: {err}")))?
+    } else {
+        let (design, version) = design
+            .zip(version)
+            .expect("clap requires --design and --version without --page-from-stdin");
+        let cwd = std::env::current_dir().map_err(|err| {
+            SkaldError::new(
+                "no-working-directory",
+                format!("cannot read the working directory: {err}"),
+            )
+        })?;
+        let mut store = Store::open(&paths::data_dir()?)?;
+        design::served(&mut store, &cwd, &design, Some(version))?.1
+    };
+    serve(page, port, idle_timeout, stdout)?;
+    Ok(Output::Raw(String::new()))
+}
+
+/// Serves `page` at a secret path on 127.0.0.1 until no request for that path has arrived for
+/// `idle_timeout` seconds. Every other path answers 404 and does not extend the server's life.
 /// The URL is written to `stdout` as one line before the first request is taken.
 pub fn serve(
     page: String,
@@ -32,7 +67,8 @@ pub fn serve(
         .to_ip()
         .expect("a TCP server has an IP address")
         .port();
-    writeln!(stdout, "{URL_PREFIX}http://127.0.0.1:{port}/")
+    let page_path = format!("/{}/", id::random(32));
+    writeln!(stdout, "{URL_PREFIX}http://127.0.0.1:{port}{page_path}")
         .and_then(|()| stdout.flush())
         .map_err(|err| failed(format!("cannot write the URL to stdout: {err}")))?;
 
@@ -42,14 +78,17 @@ pub fn serve(
     let text = Header::from_bytes("Content-Type", "text/plain; charset=UTF-8")
         .expect("the header is valid");
     // Omitting `allow-same-origin` gives the page an opaque origin, so its scripts cannot reach
-    // cookies or storage of other servers on 127.0.0.1.
+    // cookies or storage of other servers on 127.0.0.1. The remaining directives block every
+    // remote load and form post, so a page cannot send data off the machine.
     let sandbox = Header::from_bytes(
         "Content-Security-Policy",
-        "sandbox allow-scripts allow-forms allow-popups",
+        "sandbox allow-scripts allow-popups; default-src 'none'; script-src 'unsafe-inline'; \
+         style-src 'unsafe-inline'; img-src data:; form-action 'none'",
     )
     .expect("the header is valid");
+    let mut deadline = Instant::now() + idle;
     while let Some(request) = server
-        .recv_timeout(idle)
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
         .map_err(|err| failed(format!("cannot accept a request: {err}")))?
     {
         let foreign_host = request
@@ -59,7 +98,8 @@ pub fn serve(
             .is_some_and(|header| !is_local_host(header.value.as_str()));
         let (status, content_type, body) = if foreign_host {
             (403, &text, &b"forbidden\n"[..])
-        } else if is_page(request.url()) {
+        } else if is_page(request.url(), &page_path) {
+            deadline = Instant::now() + idle;
             (200, &html, page.as_bytes())
         } else {
             (404, &text, &b"not found\n"[..])
@@ -89,8 +129,8 @@ fn is_local_host(authority: &str) -> bool {
     host.parse::<IpAddr>().is_ok() || host.trim_end_matches('.').eq_ignore_ascii_case("localhost")
 }
 
-fn is_page(url: &str) -> bool {
-    url.split(['?', '#']).next() == Some("/")
+fn is_page(url: &str, page_path: &str) -> bool {
+    url.split(['?', '#']).next() == Some(page_path)
 }
 
 /// Starts `skald serve` for `page` in the background and returns its URL.
@@ -206,12 +246,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_the_root_path_is_the_page() {
-        assert!(is_page("/"));
-        assert!(is_page("/?v=1"));
-        assert!(!is_page("/nope"));
-        assert!(!is_page("/favicon.ico"));
-        assert!(!is_page(""));
+    fn only_the_secret_path_is_the_page() {
+        assert!(is_page("/abc/", "/abc/"));
+        assert!(is_page("/abc/?v=1", "/abc/"));
+        assert!(!is_page("/", "/abc/"));
+        assert!(!is_page("/abc", "/abc/"));
+        assert!(!is_page("/nope", "/abc/"));
+        assert!(!is_page("", "/abc/"));
     }
 
     #[test]
@@ -241,8 +282,8 @@ mod tests {
     #[test]
     fn url_is_read_from_the_first_line() {
         assert_eq!(
-            url_from_line("url: http://127.0.0.1:4242/\n"),
-            Some("http://127.0.0.1:4242/")
+            url_from_line("url: http://127.0.0.1:4242/abc/\n"),
+            Some("http://127.0.0.1:4242/abc/")
         );
         assert_eq!(url_from_line("{\"error\":{}}\n"), None);
         assert_eq!(url_from_line("url: \n"), None);

@@ -16,8 +16,9 @@ new issues. You edit the report.
 Read `knowledge_base` from the session context. If it is missing, or its `dir` is outside the
 repository you are working in, run `bash scripts/knowledge-base.sh` to print it. If it reports an
 `error`, show the error to the user and stop. Before the first save, run
-`bash scripts/knowledge-base.sh init` if `exists` is false. After you create or edit any file
-under `work/`, run `bash scripts/knowledge-base.sh index`.
+`bash scripts/knowledge-base.sh init` if `exists` is false. After `init` in a git repository, if
+`ignored` is false, git tracks the folder, so tell the user before you save there. After you create
+or edit any file under `work/`, run `bash scripts/knowledge-base.sh index`.
 
 <!-- end shared -->
 

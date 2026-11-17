@@ -49,7 +49,7 @@ impl SkaldError {
         if !self.problems.is_empty() {
             value.insert("problems".to_owned(), Value::Array(self.problems));
         }
-        Output::new(value).with_help(self.help)
+        Output::new(value).with_help_lines(self.help)
     }
 }
 

@@ -62,6 +62,15 @@ main_checkout() {
   (cd "$top" && pwd -P)
 }
 
+# Succeeds when $1 holds a character that a shell expands or that ends a quoted string: $, a
+# backtick, ", \, or a control character. The agent pastes printed paths into shell commands.
+has_unsafe() {
+  case "$1" in
+    *[[:cntrl:]]* | *[\$\`\"\\]*) return 0 ;;
+  esac
+  return 1
+}
+
 trim() {
   local value="$1"
   value="${value#"${value%%[![:blank:]]*}"}"
@@ -90,6 +99,10 @@ config_error() {
         value="${value%\"}"
         ;;
     esac
+    if has_unsafe "$value"; then
+      printf 'config.toon sets mode to a value with characters that are unsafe in a shell command'
+      return
+    fi
     case "$value" in
       markdown) ;;
       skald)
@@ -137,6 +150,15 @@ toon_string() {
   printf '%s' "$text"
 }
 
+# Succeeds when resolved path $1 is $2 or lies under it, compared on whole path components.
+within() {
+  [ "$1" = "$2" ] && return 0
+  case "$1" in
+    "${2%/}"/*) return 0 ;;
+  esac
+  return 1
+}
+
 # Sets dir, exists, mode, ignored, and error from the files on disk.
 inspect() {
   if dir="$(search "$root")" || { [ "$main" != "$root" ] && dir="$(search "$main")"; }; then
@@ -148,10 +170,26 @@ inspect() {
 
   error=""
   mode=markdown
-  if [ "$dir" = "$data" ]; then
-    error="$dir is the skald data directory, so it cannot hold a knowledge base"
+  unsafe=false
+  if has_unsafe "$dir"; then
+    # Nothing derived from the path may be printed, so dir is blanked.
+    unsafe=true
+    dir=""
+    mode=""
+    error="the knowledge base path holds characters that are unsafe in a shell command"
+  elif [ "$dir" = "$data" ]; then
+    error="the .skald folder here is the skald data directory, so it cannot hold a knowledge base; create a .claude/.skald folder in the folder that holds it, or run from a project folder"
+  elif [ "$exists" = true ] && ! within "$dir" "$root" && ! within "$dir" "$main"; then
+    # The path lies outside the repository and is not printed, as above.
+    unsafe=true
+    dir=""
+    mode=""
+    error="the knowledge base folder is outside the repository"
   elif [ "$exists" = true ] && [ ! -x "$dir" ]; then
     error="cannot open $dir"
+  elif [ "$exists" = true ] && [ -n "$(find "$dir" -type l -print 2>/dev/null || true)" ]; then
+    # A link inside the folder can send writes anywhere, also when it dangles.
+    error="the knowledge base folder holds a symbolic link"
   elif [ -f "$dir/config.toon" ]; then
     error="$(config_error "$dir/config.toon" 2>/dev/null)" || error="cannot read $dir/config.toon"
     [ -z "$error" ] || mode=""
@@ -159,7 +197,7 @@ inspect() {
 
   # The probe runs from the parent folder, because dir itself may be missing.
   ignored=false
-  if [ "$in_git" = true ] && git -C "$(dirname "$dir")" check-ignore -q "$dir/config.toon" 2>/dev/null; then
+  if [ "$unsafe" = false ] && [ "$in_git" = true ] && git -C "$(dirname "$dir")" check-ignore -q "$dir/config.toon" 2>/dev/null; then
     ignored=true
   fi
 }
@@ -172,7 +210,7 @@ report() {
     printf '  mode: %s\n' "$mode"
   fi
   printf '  ignored: %s\n' "$ignored"
-  if [ -f "$dir/work/index.toon" ]; then
+  if [ "$unsafe" = false ] && [ -f "$dir/work/index.toon" ]; then
     printf '  work_index: %s\n' "$(toon_string "$dir/work/index.toon")"
   fi
   if [ -n "$error" ]; then
@@ -215,7 +253,7 @@ init() {
 # date is the local date of <seconds>. GNU stat prints three words for %y (date, time, zone), so
 # the name follows four words there and two words on BSD.
 folder_times() {
-  local work="$1" format words
+  local work="$1" format words nl=$'\n'
   if stat -c %Y / >/dev/null 2>&1; then
     format=(-c '%Y %y %n')
     words=4
@@ -224,8 +262,8 @@ folder_times() {
     words=2
   fi
   {
-    find "$work" -mindepth 1 -maxdepth 1 -type d -exec stat "${format[@]}" {} + 2>/dev/null || true
-    find "$work" -mindepth 2 -type f -exec stat "${format[@]}" {} + 2>/dev/null || true
+    find "$work" -mindepth 1 -maxdepth 1 -type d ! -path "*$nl*" -exec stat "${format[@]}" {} + 2>/dev/null || true
+    find "$work" -mindepth 2 -type f ! -path "*$nl*" -exec stat "${format[@]}" {} + 2>/dev/null || true
   } | awk -v skip="$((${#work} + 1))" -v words="$words" '
     {
       seconds = $1 + 0
@@ -270,6 +308,7 @@ index() {
   rows="$(folder_times "$work")"
   while IFS= read -r row; do
     [ -n "$row" ] || continue
+    has_unsafe "${row#*"$tab"*"$tab"}" && continue
     total=$((total + 1))
     [ "$listed" -lt "$MAX_LISTED" ] || continue
     listed=$((listed + 1))

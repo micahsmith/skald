@@ -63,15 +63,28 @@ struct Response {
     body: Vec<u8>,
 }
 
+/// The `host:port` and the path of a server URL.
+fn split_url(url: &str) -> (&str, &str) {
+    let rest = url
+        .strip_prefix("http://")
+        .unwrap_or_else(|| panic!("url: {url}"));
+    rest.find('/')
+        .map(|at| rest.split_at(at))
+        .unwrap_or_else(|| panic!("url: {url}"))
+}
+
+/// Requests the secret page named by `url`.
+fn get_page(url: &str) -> Response {
+    get_with_host(url, split_url(url).1, None)
+}
+
+/// Requests `path` from the server named by `url`.
 fn get(url: &str, path: &str) -> Response {
     get_with_host(url, path, None)
 }
 
 fn get_with_host(url: &str, path: &str, host: Option<&str>) -> Response {
-    let address = url
-        .strip_prefix("http://")
-        .and_then(|rest| rest.strip_suffix('/'))
-        .unwrap_or_else(|| panic!("url: {url}"));
+    let address = split_url(url).0;
     let mut stream = TcpStream::connect(address).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -222,7 +235,7 @@ fn freeform_page_is_served_unchanged() {
         "{}",
         server.url
     );
-    let response = get(&server.url, "/");
+    let response = get_page(&server.url);
     assert_eq!(response.status, 200);
     assert!(
         response.content_type.starts_with("text/html"),
@@ -233,6 +246,17 @@ fn freeform_page_is_served_unchanged() {
     let policy = &response.content_security_policy;
     assert!(policy.contains("sandbox"), "{policy}");
     assert!(!policy.contains("allow-same-origin"), "{policy}");
+    assert!(!policy.contains("allow-forms"), "{policy}");
+    for directive in [
+        "sandbox allow-scripts allow-popups",
+        "default-src 'none'",
+        "script-src 'unsafe-inline'",
+        "style-src 'unsafe-inline'",
+        "img-src data:",
+        "form-action 'none'",
+    ] {
+        assert!(policy.contains(directive), "{directive} missing: {policy}");
+    }
 }
 
 #[test]
@@ -244,7 +268,7 @@ fn typed_page_served_equals_the_export() {
     let exported = std::fs::read(repo.join("a.html")).unwrap();
 
     let server = Server::start(&sandbox, &repo, &id, "5");
-    let response = get(&server.url, "/");
+    let response = get_page(&server.url);
     assert_eq!(response.status, 200);
     assert_eq!(response.content_type, "text/html; charset=utf-8");
     assert_eq!(response.body, exported);
@@ -276,7 +300,52 @@ fn unknown_path_is_404() {
 
     let server = Server::start(&sandbox, &repo, &id, "5");
     assert_eq!(get(&server.url, "/nope").status, 404);
-    assert_eq!(get(&server.url, "/").status, 200);
+    assert_eq!(get_page(&server.url).status, 200);
+}
+
+#[test]
+fn root_and_wrong_paths_are_404_and_the_secret_page_is_200() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    let page = sketch();
+    let id = submit_id(&sandbox, &repo, "freeform", "sketch", &page);
+
+    let server = Server::start(&sandbox, &repo, &id, "5");
+    let secret = split_url(&server.url).1;
+    assert!(secret.len() >= 34, "{secret}");
+    for path in ["/", "/index.html", "/wrong/", &secret[..secret.len() - 1]] {
+        let response = get(&server.url, path);
+        assert_eq!(response.status, 404, "{path}");
+        assert!(!String::from_utf8_lossy(&response.body).contains("Checkout sketch"));
+    }
+    let response = get_page(&server.url);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, page.as_bytes());
+}
+
+#[test]
+fn requests_to_wrong_paths_do_not_keep_the_server_alive() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    let id = submit_id(&sandbox, &repo, "freeform", "sketch", "<p>one</p>\n");
+
+    let mut server = Server::start(&sandbox, &repo, &id, "2");
+    let address = split_url(&server.url).0.to_owned();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = server.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "wrong-path requests kept the server alive"
+        );
+        // The server can exit between the check above and this request.
+        let _ = TcpStream::connect(&address)
+            .and_then(|mut stream| stream.write_all(b"GET /nope HTTP/1.0\r\n\r\n"));
+        std::thread::sleep(Duration::from_millis(300));
+    };
+    assert_eq!(status.code(), Some(0));
 }
 
 #[test]
@@ -287,13 +356,14 @@ fn foreign_host_header_is_403() {
     let id = submit_id(&sandbox, &repo, "freeform", "sketch", &page);
 
     let server = Server::start(&sandbox, &repo, &id, "5");
-    let port = server.url.rsplit(':').next().unwrap().trim_end_matches('/');
+    let page_path = split_url(&server.url).1.to_owned();
+    let port = split_url(&server.url).0.rsplit(':').next().unwrap();
     for host in [
         "attacker.example",
         "attacker.example:80",
         "127.0.0.1.evil.example",
     ] {
-        for path in ["/", "/nope"] {
+        for path in [page_path.as_str(), "/nope"] {
             let response = get_with_host(&server.url, path, Some(host));
             assert_eq!(response.status, 403, "{host} {path}");
             let body = String::from_utf8(response.body).unwrap();
@@ -306,7 +376,7 @@ fn foreign_host_header_is_403() {
         format!("LOCALHOST:{port}"),
         format!("[::1]:{port}"),
     ] {
-        let response = get_with_host(&server.url, "/", Some(&host));
+        let response = get_with_host(&server.url, &page_path, Some(&host));
         assert_eq!(response.status, 200, "{host}");
         assert_eq!(response.body, page.as_bytes());
     }
@@ -330,7 +400,7 @@ fn open_prints_the_url_and_the_server_answers() {
     assert_eq!(opened["browser"], "skipped");
     let url = opened["url"].as_str().unwrap();
     assert!(url.starts_with("http://127.0.0.1:"), "url: {url}");
-    assert_eq!(get(url, "/").status, 200);
+    assert_eq!(get_page(url).status, 200);
 }
 
 #[test]
@@ -352,7 +422,7 @@ fn open_serves_the_page_that_render_writes() {
         &["design", "open", &id, "--no-browser", "--idle-timeout", "5"],
     );
     let url = opened["opened"]["url"].as_str().unwrap();
-    assert_eq!(get(url, "/").body, rendered);
+    assert_eq!(get_page(url).body, rendered);
 }
 
 #[cfg(unix)]

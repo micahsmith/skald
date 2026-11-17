@@ -5,10 +5,17 @@ const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 /// `prefix` followed by eleven characters from `[a-z0-9]`, drawn from a generator seeded from the
 /// OS.
 pub fn new(prefix: char) -> String {
+    std::iter::once(prefix).chain(random_chars(11)).collect()
+}
+
+/// `len` characters from `[a-z0-9]`, drawn from a generator seeded from the OS.
+pub fn random(len: usize) -> String {
+    random_chars(len).collect()
+}
+
+fn random_chars(len: usize) -> impl Iterator<Item = char> {
     let mut rng = rand::rng();
-    std::iter::once(prefix)
-        .chain((0..11).map(|_| char::from(ALPHABET[rng.random_range(0..ALPHABET.len())])))
-        .collect()
+    (0..len).map(move |_| char::from(ALPHABET[rng.random_range(0..ALPHABET.len())]))
 }
 
 #[cfg(test)]
@@ -26,6 +33,13 @@ mod tests {
                 .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit()),
             "{id}"
         );
+    }
+
+    #[test]
+    fn random_has_the_requested_length() {
+        let value = random(32);
+        assert_eq!(value.len(), 32);
+        assert_ne!(value, random(32));
     }
 
     #[test]

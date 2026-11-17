@@ -17,7 +17,8 @@ const LABEL_BACK: f64 = 16.0;
 const LABEL_SIDE: f64 = 8.0;
 const EDGE_SPACING: f64 = 8.0;
 const EDGE_SPREAD: f64 = 28.0;
-const LOOP_SPAN: f64 = 24.0;
+const LOOP_TOP: f64 = 8.0;
+const LABEL_ROOM: f64 = 10.0;
 const LOOP_GAP: f64 = 4.0;
 const LOOP_HEIGHT: f64 = 16.0;
 
@@ -86,11 +87,9 @@ fn diagram(model: &DataModelRecord) -> String {
     let frames = layout(entities, columns);
     let width = 2 * MARGIN + columns * BOX_WIDTH + columns.saturating_sub(1) * GAP;
     let height = frames.iter().map(Frame::bottom).max().unwrap_or(MARGIN) + MARGIN;
-    let mut svg =
-        format!("<svg width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">\n");
-    svg.push_str(ARROW);
-    svg.push('\n');
-
+    let mut width = width;
+    let mut height = height;
+    let mut svg = String::new();
     // Edges come first so that boxes cover the edges that cross them.
     let index: HashMap<&str, usize> = entities
         .iter()
@@ -119,7 +118,7 @@ fn diagram(model: &DataModelRecord) -> String {
             let (slot, count) = (*position, sizes[&pair]);
             *position += 1;
             let edge = if target == source {
-                Edge::self_loop(from, slot, count)
+                Edge::self_loop(from, slot)
             } else {
                 // The offset is measured from the lower entity index to the higher.
                 let side = if source < target { 1.0 } else { -1.0 };
@@ -127,14 +126,18 @@ fn diagram(model: &DataModelRecord) -> String {
                 let offset = side * (slot as f64 - (count - 1) as f64 / 2.0) * spacing;
                 Edge::straight(from, &frames[target], offset)
             };
+            let (reach_x, reach_y) = edge.reach();
+            width = width.max(reach_x.ceil() as usize);
+            height = height.max(reach_y.ceil() as usize);
             svg.push_str(&edge.markup(relation));
         }
     }
     for (entity, frame) in entities.iter().zip(&frames) {
         svg.push_str(&node(entity, frame));
     }
-    svg.push_str("</svg>\n");
-    svg
+    format!(
+        "<svg width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">\n{ARROW}\n{svg}</svg>\n"
+    )
 }
 
 /// `ceil(sqrt(entities))`, computed on integers.
@@ -245,19 +248,25 @@ impl Edge {
     }
 
     /// A loop out of the right side of the box and back, because a straight segment from a box
-    /// to itself has no length. Loop `slot` of `count` is stacked below the one before it.
-    fn self_loop(frame: &Frame, slot: usize, count: usize) -> Self {
+    /// to itself has no length. Loop `slot` is stacked below the one before it.
+    fn self_loop(frame: &Frame, slot: usize) -> Self {
         let right = (frame.x + BOX_WIDTH) as f64;
         let outer = right + LOOP_WIDTH;
-        let gaps = LOOP_GAP * (count - 1) as f64;
-        let height = LOOP_HEIGHT.min((LOOP_SPAN - gaps) / count as f64);
-        let first = (TITLE_HEIGHT as f64 - (count as f64 * height + gaps)) / 2.0;
-        let top = frame.y as f64 + first + slot as f64 * (height + LOOP_GAP);
-        let bottom = top + height;
+        let top = frame.y as f64 + LOOP_TOP + slot as f64 * (LOOP_HEIGHT + LOOP_GAP);
+        let bottom = top + LOOP_HEIGHT;
         Self {
             points: vec![(right, top), (outer, top), (outer, bottom), (right, bottom)],
             label: (outer + LOOP_LABEL_GAP, (top + bottom) / 2.0),
         }
+    }
+
+    /// The right and bottom limits of the line and of its label, with room for the glyph.
+    fn reach(&self) -> (f64, f64) {
+        let (label_x, label_y) = self.label;
+        self.points.iter().fold(
+            (label_x + LABEL_ROOM, label_y + LABEL_ROOM),
+            |(x, y), point| (x.max(point.0), y.max(point.1)),
+        )
     }
 
     fn markup(&self, relation: &Relation) -> String {
@@ -428,6 +437,16 @@ mod tests {
         json!({ "entities": entities })
     }
 
+    /// One entity with `count` self-relations.
+    fn self_loops(count: usize) -> Value {
+        let mut record = entities(1);
+        record["entities"][0]["relations"] = (0..count)
+            .map(|index| json!({"id": format!("r{index}"), "target": "e0", "cardinality": "many"}))
+            .collect::<Vec<_>>()
+            .into();
+        record
+    }
+
     #[test]
     fn page_is_self_contained() {
         let page = page(example());
@@ -463,6 +482,8 @@ mod tests {
     fn view_box_is_computed_from_the_grid() {
         let cases = [
             (example(), (600, 132)),
+            (self_loops(1), (310, 92)),
+            (self_loops(8), (310, 196)),
             (entities(5), (900, 184)),
             (entities(0), (60, 60)),
         ];
@@ -552,6 +573,56 @@ mod tests {
             r#"<text class="cardinality" x="300" y="46">*</text>"#,
         );
         assert!(page.contains(edge), "{page}");
+    }
+
+    #[test]
+    fn many_self_relations_keep_their_height_and_stay_inside_the_view_box() {
+        let page = page(self_loops(9));
+        let size: Vec<f64> = page
+            .split("viewBox=\"0 0 ")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .split(' ')
+            .map(|n| n.parse().unwrap())
+            .collect();
+        let (width, height) = (size[0], size[1]);
+        let paths: Vec<&str> = page.split("<path data-kind=\"relation\"").skip(1).collect();
+        assert_eq!(paths.len(), 9, "{page}");
+        let mut labels = Vec::new();
+        for path in &paths {
+            let d = path
+                .split(" d=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap();
+            let points: Vec<(f64, f64)> = d
+                .split(['M', 'L'])
+                .skip(1)
+                .map(|p| {
+                    let mut n = p.split_whitespace().map(|n| n.parse::<f64>().unwrap());
+                    (n.next().unwrap(), n.next().unwrap())
+                })
+                .collect();
+            assert!(points[2].1 - points[1].1 > 0.0, "{d}");
+            for (x, y) in points {
+                assert!(x <= width && y <= height, "{d} outside {width}x{height}");
+            }
+            let label = path.split("class=\"cardinality\" x=\"").nth(1).unwrap();
+            let mut n = label
+                .split(['"', '>'])
+                .filter_map(|n| n.parse::<f64>().ok());
+            let (x, y) = (n.next().unwrap(), n.next().unwrap());
+            assert!(x + 5.0 <= width && y + 5.0 <= height, "label {x},{y}");
+            labels.push(y);
+        }
+        for pair in labels.windows(2) {
+            assert!(pair[1] - pair[0] >= 13.0, "{labels:?}");
+        }
     }
 
     /// The `d` value and the label position of each relation, in document order.

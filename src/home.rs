@@ -88,7 +88,7 @@ pub fn view(cwd: &Path) -> Result<Output, SkaldError> {
             "claude plugin marketplace update {marketplace} && claude plugin update {id}"
         ));
     }
-    Ok(Output::new(view).with_help(help))
+    Ok(Output::new(view).with_help_lines(help))
 }
 
 /// What a session hook prints when the home view fails: one line, so that the session still

@@ -222,6 +222,111 @@ fn a_symbolic_link_to_the_repository_resolves_to_the_real_path() {
     assert_eq!(output["dir"], skald_dir(&repo));
 }
 
+/// Asserts that every command reports `fragment` as the error, prints no part of `secret`, and
+/// leaves the sandbox untouched.
+fn assert_blocked_without_writing(sandbox: &Sandbox, repo: &Path, fragment: &str, secret: &str) {
+    let before = snapshot(sandbox);
+    for command in [None, Some("init"), Some("index")] {
+        let mut cmd = script(sandbox, repo);
+        if let Some(command) = command {
+            cmd.arg(command);
+        }
+        let run = run(&mut cmd);
+        let error = run.output["error"].as_str().unwrap_or_default();
+        assert!(
+            error.contains(fragment),
+            "stdout:\n{}\nstderr:\n{}",
+            run.stdout,
+            run.stderr
+        );
+        assert!(
+            !run.stdout.contains(secret),
+            "path leaked in stdout:\n{}",
+            run.stdout
+        );
+        assert_eq!(run.code, i32::from(command.is_some()));
+    }
+    assert_eq!(snapshot(sandbox), before);
+}
+
+#[test]
+fn a_dangling_config_link_is_an_error() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&repo.join(".skald"));
+    std::os::unix::fs::symlink(
+        "../../outside-secret/created",
+        repo.join(".skald/config.toon"),
+    )
+    .unwrap();
+    mkdir(&sandbox.root.join("outside-secret"));
+
+    assert_blocked_without_writing(&sandbox, &repo, "symbolic link", "outside-secret");
+}
+
+#[test]
+fn a_linked_work_folder_is_an_error() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&repo.join(".skald"));
+    mkdir(&sandbox.root.join("outside-secret"));
+    std::os::unix::fs::symlink("../../outside-secret", repo.join(".skald/work")).unwrap();
+
+    assert_blocked_without_writing(&sandbox, &repo, "symbolic link", "outside-secret");
+}
+
+#[test]
+fn a_link_deep_inside_the_folder_is_an_error() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&repo.join(".skald/work/plan-a"));
+    mkdir(&sandbox.root.join("outside-secret"));
+    write(&sandbox.root.join("outside-secret/target.md"), "x");
+    std::os::unix::fs::symlink(
+        "../../../../outside-secret/target.md",
+        repo.join(".skald/work/plan-a/plan.md"),
+    )
+    .unwrap();
+
+    assert_blocked_without_writing(&sandbox, &repo, "symbolic link", "outside-secret");
+}
+
+#[test]
+fn a_skald_link_to_a_folder_outside_the_repository_is_an_error() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&sandbox.root.join("outside-secret"));
+    std::os::unix::fs::symlink("../outside-secret", repo.join(".skald")).unwrap();
+
+    assert_blocked_without_writing(&sandbox, &repo, "outside the repository", "outside-secret");
+}
+
+#[test]
+fn a_folder_in_a_sibling_with_the_repository_name_prefix_is_outside() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    let sibling = PathBuf::from(format!("{}-other", repo.display()));
+    mkdir(&sibling.join("kb"));
+    std::os::unix::fs::symlink(sibling.join("kb"), repo.join(".skald")).unwrap();
+
+    assert_blocked_without_writing(&sandbox, &repo, "outside the repository", "-other");
+}
+
+#[test]
+fn a_skald_link_to_a_linkless_folder_inside_the_repository_works() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&repo.join("kb"));
+    std::os::unix::fs::symlink("kb", repo.join(".skald")).unwrap();
+
+    let run = init_ok(&sandbox, &repo);
+
+    assert_eq!(run.output["dir"], format!("{}/kb", repo.display()));
+    assert!(run.output.get("error").is_none(), "stdout:\n{}", run.stdout);
+    index_ok(&sandbox, &repo);
+    assert!(repo.join("kb/work/index.toon").exists());
+}
+
 #[test]
 fn a_gitignore_inside_the_folder_marks_it_ignored() {
     let sandbox = Sandbox::new();
@@ -303,7 +408,7 @@ fn output_ignores_folder_count() {
 }
 
 #[test]
-fn a_path_with_quotes_and_backslashes_is_quoted() {
+fn a_path_with_quotes_and_backslashes_is_refused() {
     let sandbox = Sandbox::new();
     let repo = sandbox.root.join(r#"my "repo":1\x"#);
     mkdir(&repo);
@@ -312,10 +417,7 @@ fn a_path_with_quotes_and_backslashes_is_quoted() {
 
     let run = default_run(&sandbox, &repo);
 
-    assert_eq!(run.output["dir"], skald_dir(&repo));
-    // toon-format 0.7 also decodes this path unquoted, so only the raw line shows the quotes.
-    let line = run.stdout.lines().nth(1).unwrap();
-    assert!(line.starts_with("  dir: \""), "stdout:\n{}", run.stdout);
+    assert_refused(&run, "my");
 }
 
 #[test]
@@ -328,9 +430,80 @@ fn newline_in_path_cannot_forge_lines() {
 
     let run = default_run(&sandbox, &repo);
 
-    assert_eq!(run.output["dir"], skald_dir(&repo));
-    assert_eq!(raw_keys(&run.stdout), ["dir", "exists", "mode", "ignored"]);
+    assert_refused(&run, "forged");
+    assert_eq!(raw_keys(&run.stdout), ["dir", "exists", "ignored", "error"]);
     assert_eq!(run.stdout.lines().count(), 5, "stdout:\n{}", run.stdout);
+}
+
+/// Asserts that the run reports the unsafe-path error and prints no part of the path, which
+/// contains `fragment`.
+fn assert_refused(run: &Run, fragment: &str) {
+    assert_eq!(run.output["dir"], "", "stdout:\n{}", run.stdout);
+    assert!(
+        run.output["error"]
+            .as_str()
+            .unwrap()
+            .contains("unsafe in a shell command"),
+        "stdout:\n{}",
+        run.stdout
+    );
+    assert!(run.output.get("mode").is_none(), "stdout:\n{}", run.stdout);
+    assert!(
+        !run.stdout.contains(fragment),
+        "path leaked in stdout:\n{}",
+        run.stdout
+    );
+}
+
+#[test]
+fn a_skald_link_to_a_folder_with_an_unsafe_name_is_refused() {
+    for name in ["kb$(touch PWNED)", "kb`id`", "kb\"q", "kb\\x", "kb\u{1}x"] {
+        let sandbox = Sandbox::new();
+        let repo = sandbox.repo_without_origin();
+        mkdir(&repo.join(name));
+        std::os::unix::fs::symlink(name, repo.join(".skald")).unwrap();
+
+        let run = default_run(&sandbox, &repo);
+
+        assert_refused(&run, "kb");
+        assert!(!repo.join("PWNED").exists());
+    }
+}
+
+#[test]
+fn init_and_index_refuse_an_unsafe_path_without_writing() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    mkdir(&repo.join("kb$(x)"));
+    std::os::unix::fs::symlink("kb$(x)", repo.join(".skald")).unwrap();
+    let before = snapshot(&sandbox);
+
+    for command in ["init", "index"] {
+        let run = run(script(&sandbox, &repo).arg(command));
+        assert_eq!(run.code, 1, "stdout:\n{}", run.stdout);
+        assert_refused(&run, "kb");
+    }
+
+    assert_eq!(snapshot(&sandbox), before);
+}
+
+#[test]
+fn a_mode_value_with_unsafe_characters_is_not_echoed() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    write(&repo.join(".skald/config.toon"), "mode: $(touch PWNED)\n");
+
+    let run = default_run(&sandbox, &repo);
+
+    assert!(
+        run.output["error"]
+            .as_str()
+            .unwrap()
+            .contains("unsafe in a shell command"),
+        "stdout:\n{}",
+        run.stdout
+    );
+    assert!(!run.stdout.contains("PWNED"), "stdout:\n{}", run.stdout);
 }
 
 #[test]
@@ -348,6 +521,7 @@ fn an_unknown_command_prints_usage_and_exits_with_2() {
 fn assert_data_directory_error(output: &Value) {
     let error = output["error"].as_str().unwrap_or_default();
     assert!(error.contains("skald data directory"), "output: {output:#}");
+    assert!(error.contains(".claude/.skald"), "output: {output:#}");
     assert_eq!(output["exists"], false);
     assert_eq!(
         common::keys(output),
@@ -490,6 +664,31 @@ fn the_default_data_directory_is_an_error_when_it_is_missing() {
     let run = run_ok(&mut cmd);
 
     assert_data_directory_error(&run.output);
+}
+
+#[test]
+fn a_claude_folder_in_the_home_directory_avoids_the_data_directory_error() {
+    let sandbox = Sandbox::new();
+    let home = sandbox.work.clone();
+    let kb = home.join(".claude/.skald");
+    mkdir(&kb);
+    let command = |arg: Option<&str>| {
+        let mut cmd = script(&sandbox, &home);
+        cmd.env_remove("SKALD_HOME").env("HOME", &home);
+        if let Some(arg) = arg {
+            cmd.arg(arg);
+        }
+        run_ok(&mut cmd)
+    };
+
+    for arg in [None, Some("init"), Some("index")] {
+        let output = command(arg).output;
+        assert_eq!(output["dir"], skald_dir(&home.join(".claude")));
+        assert_eq!(output["exists"], true, "output: {output:#}");
+        assert!(output.get("error").is_none(), "output: {output:#}");
+    }
+    assert!(kb.join("config.toon").is_file());
+    assert!(kb.join("work/index.toon").is_file());
 }
 
 #[test]
@@ -961,6 +1160,25 @@ fn folder_names_that_need_quotes_are_kept_as_strings() {
     for name in ["a,b", "2026", "two words"] {
         assert!(names.contains(&name), "{name:?} missing from: {index:#}");
     }
+}
+
+#[test]
+fn index_leaves_out_folders_with_unsafe_names() {
+    let sandbox = Sandbox::new();
+    let (repo, work) = initialized(&sandbox);
+    for name in ["safe", "x$(id)", "x`id`", "x\"q", "x\\y", "x\u{1}y", "x\ry"] {
+        write(&work.join(name).join("notes.md"), "notes\n");
+    }
+    write(&work.join("two\nlines/notes.md"), "notes\n");
+    write(&work.join("other/notes.md"), "notes\n");
+
+    index_ok(&sandbox, &repo);
+
+    let index = index_file(&repo);
+    let mut listed = names(&index);
+    listed.sort();
+    assert_eq!(listed, ["other", "safe"], "index: {index:#}");
+    assert_eq!(index["total"], 2);
 }
 
 #[test]

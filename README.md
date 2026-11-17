@@ -13,6 +13,9 @@ The plugin works without skald.
 Give the prompt below to your agent to install the plugin. Use the same prompt to install, update,
 or reinstall. Each run replaces any earlier copy, so every run ends in the same state.
 
+The plugin's `skills/` and `hooks/` folders moved under `plugin/`. A saved copy of an older prompt
+no longer works, so you SHOULD use the current prompt below.
+
 ```text
 Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
 order:

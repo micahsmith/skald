@@ -122,30 +122,6 @@ impl Diffable for InterfaceRecord {
         }
         elements
     }
-
-    fn ids(&self) -> Vec<(String, ElementKind)> {
-        let mut ids = Vec::new();
-        for operation in &self.operations {
-            ids.push((operation.id.clone(), ElementKind::Operation));
-            for (element, parameters) in [
-                (ElementKind::Input, &operation.inputs),
-                (ElementKind::Output, &operation.outputs),
-            ] {
-                ids.extend(
-                    parameters
-                        .iter()
-                        .map(|parameter| (parameter.id.clone(), element)),
-                );
-            }
-            ids.extend(
-                operation
-                    .errors
-                    .iter()
-                    .map(|error| (error.id.clone(), ElementKind::Error)),
-            );
-        }
-        ids
-    }
 }
 
 impl Typed for InterfaceRecord {
@@ -478,18 +454,6 @@ mod tests {
             None,
         );
         assert_eq!(problems, pairs(&[("/operations/0", "unknown-id")]));
-    }
-
-    #[test]
-    fn ids_agree_with_the_ids_of_elements() {
-        let record = InterfaceRecord::validate(&example(), None).unwrap();
-        let expected: Vec<_> = record
-            .elements()
-            .into_iter()
-            .map(|element| (element.id, element.kind))
-            .collect();
-        assert!(!expected.is_empty());
-        assert_eq!(record.ids(), expected);
     }
 
     #[test]

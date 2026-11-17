@@ -85,27 +85,7 @@ fn dispatch(cli: Cli, stdout: &mut impl Write) -> Result<Output, SkaldError> {
             page_from_stdin,
             idle_timeout,
             port,
-        }) => {
-            let page = match (design, version) {
-                (Some(design), Some(version)) if !page_from_stdin => {
-                    let mut store = Store::open(&paths::data_dir()?)?;
-                    let (_, page) =
-                        design::served(&mut store, &current_dir()?, &design, Some(version))?;
-                    page
-                }
-                _ => {
-                    let mut page = String::new();
-                    std::io::Read::read_to_string(&mut std::io::stdin(), &mut page).map_err(
-                        |err| {
-                            SkaldError::new("serve-failed", format!("cannot read the page: {err}"))
-                        },
-                    )?;
-                    page
-                }
-            };
-            serve::serve(page, port, idle_timeout, stdout)?;
-            Ok(Output::Raw(String::new()))
-        }
+        }) => serve::run(design, version, page_from_stdin, port, idle_timeout, stdout),
     }
 }
 
