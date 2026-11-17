@@ -49,7 +49,7 @@ impl ElementKind {
         attributes: [(&'static str, Value); N],
     ) -> diff::Element {
         diff::Element {
-            kind: self.noun(),
+            kind: self,
             id: id.to_owned(),
             attributes: attributes.into(),
         }
@@ -63,14 +63,14 @@ pub struct Site<'a, 'p> {
     pub id: Option<&'a str>,
 }
 
-fn pointer_token(key: &str) -> String {
+pub(super) fn pointer_token(key: &str) -> String {
     key.replace('~', "~0").replace('/', "~1")
 }
 
 /// Collects problems while tracking which ids the submission may keep and which it has used.
 pub struct Check<'a> {
     /// The element kind of every id in the previous version.
-    known: HashMap<String, &'static str>,
+    known: HashMap<String, ElementKind>,
     used: HashSet<&'a str>,
     problems: Vec<Problem>,
 }
@@ -111,7 +111,7 @@ impl<'a> Check<'a> {
                 "duplicate-id",
                 format!("id `{id}` is already used by an earlier element"),
             );
-        } else if self.known.get(id) != Some(&noun) {
+        } else if self.known.get(id) != Some(&site.element) {
             self.report(
                 site,
                 site.path,

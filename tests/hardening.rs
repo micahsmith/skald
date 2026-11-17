@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use assert_cmd::assert::OutputAssertExt;
-use common::{ORIGIN, Sandbox};
+use common::{ORIGIN, Sandbox, submit_args};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -77,20 +77,6 @@ fn run_within_deadline(cmd: &mut Command, label: &str) -> (i32, String) {
     (code, stdout)
 }
 
-fn submit_args(file: &Path) -> [&str; 8] {
-    let file = file.to_str().unwrap();
-    [
-        "design",
-        "submit",
-        "--kind",
-        "data-model",
-        "--name",
-        "orders",
-        "--file",
-        file,
-    ]
-}
-
 /// Runs every command of `EVERY_COMMAND` with `--json` in a fresh repository, each started by
 /// `launch`, and returns each label with its exit code.
 fn run_every_command(launch: impl Fn(&Sandbox, &Path) -> Command) -> Vec<(&'static str, i32)> {
@@ -109,9 +95,12 @@ fn run_every_command(launch: impl Fn(&Sandbox, &Path) -> Command) -> Vec<(&'stat
     run("skald", &[]);
     run("setup --no-plugin", &["setup", "--no-plugin"]);
     run("hook claude-code", &["hook", "claude-code"]);
-    let submitted = run("design submit", &submit_args(&v1));
+    let submitted = run("design submit", &submit_args("data-model", "orders", &v1));
     let id = submitted["design"]["id"].as_str().unwrap_or("d-missing");
-    run("design submit version 2", &submit_args(&v2));
+    run(
+        "design submit version 2",
+        &submit_args("data-model", "orders", &v2),
+    );
     run("design list", &["design", "list"]);
     run("design get", &["design", "get", id]);
     run(

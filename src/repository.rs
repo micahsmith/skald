@@ -1,63 +1,54 @@
-use std::path::PathBuf;
-
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::error::SkaldError;
-use crate::git::{self, RepoInfo};
+use crate::git::RepoInfo;
 use crate::id;
 use crate::store;
 
-#[expect(dead_code, reason = "nothing reads default_branch or root yet")]
 pub struct RepoContext {
     pub id: String,
     pub identity: String,
-    pub default_branch: String,
     pub branch: String,
-    pub root: PathBuf,
 }
 
 impl RepoContext {
-    /// Returns `info` unchanged when the repository row is missing.
-    pub fn find(
-        tx: &Transaction<'_>,
-        info: RepoInfo,
-    ) -> Result<Result<Self, RepoInfo>, SkaldError> {
+    /// Returns `None` when the repository row is missing.
+    pub fn find(tx: &Transaction<'_>, info: &RepoInfo) -> Result<Option<Self>, SkaldError> {
         let found = tx
             .query_row(
-                "SELECT id, default_branch FROM repository WHERE identity = ?1",
+                "SELECT id FROM repository WHERE identity = ?1",
                 [&info.identity],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| row.get(0),
             )
             .optional()?;
-        Ok(match found {
-            Some((id, default_branch)) => Ok(Self::new(id, default_branch, info)),
-            None => Err(info),
-        })
+        Ok(found.map(|id| Self::new(id, info)))
     }
 
-    pub fn find_or_insert(tx: &Transaction<'_>, info: RepoInfo) -> Result<Self, SkaldError> {
-        let info = match Self::find(tx, info)? {
-            Ok(repo) => return Ok(repo),
-            Err(info) => info,
-        };
+    /// Inserts the row with `default_branch` when it is still missing. The caller resolves the
+    /// branch beforehand so that git does not run while `tx` holds the write lock.
+    pub fn find_or_insert(
+        tx: &Transaction<'_>,
+        info: RepoInfo,
+        default_branch: String,
+    ) -> Result<Self, SkaldError> {
+        if let Some(repo) = Self::find(tx, &info)? {
+            return Ok(repo);
+        }
         let id = id::new('y');
-        let default_branch = git::default_branch(&info.root)?;
         let created_at = store::now(tx)?;
         tx.execute(
             "INSERT INTO repository (id, identity, default_branch, created_at)
              VALUES (?1, ?2, ?3, ?4)",
             params![id, info.identity, default_branch, created_at],
         )?;
-        Ok(Self::new(id, default_branch, info))
+        Ok(Self::new(id, &info))
     }
 
-    fn new(id: String, default_branch: String, info: RepoInfo) -> Self {
+    fn new(id: String, info: &RepoInfo) -> Self {
         Self {
             id,
-            identity: info.identity,
-            default_branch,
-            branch: info.branch,
-            root: info.root,
+            identity: info.identity.clone(),
+            branch: info.branch.clone(),
         }
     }
 }

@@ -123,10 +123,10 @@ impl Diffable for InterfaceRecord {
         elements
     }
 
-    fn ids(&self) -> Vec<(String, &'static str)> {
+    fn ids(&self) -> Vec<(String, ElementKind)> {
         let mut ids = Vec::new();
         for operation in &self.operations {
-            ids.push((operation.id.clone(), ElementKind::Operation.noun()));
+            ids.push((operation.id.clone(), ElementKind::Operation));
             for (element, parameters) in [
                 (ElementKind::Input, &operation.inputs),
                 (ElementKind::Output, &operation.outputs),
@@ -134,14 +134,14 @@ impl Diffable for InterfaceRecord {
                 ids.extend(
                     parameters
                         .iter()
-                        .map(|parameter| (parameter.id.clone(), element.noun())),
+                        .map(|parameter| (parameter.id.clone(), element)),
                 );
             }
             ids.extend(
                 operation
                     .errors
                     .iter()
-                    .map(|error| (error.id.clone(), ElementKind::Error.noun())),
+                    .map(|error| (error.id.clone(), ElementKind::Error)),
             );
         }
         ids
@@ -532,7 +532,7 @@ mod tests {
     fn elements_carry_their_parent_and_compared_attributes() {
         let record = InterfaceRecord::validate(&example(), None).unwrap();
         let create = &record.operations[0];
-        let elements: Vec<(&str, Value)> = record
+        let elements: Vec<(ElementKind, Value)> = record
             .elements()
             .into_iter()
             .map(|element| {
@@ -544,8 +544,17 @@ mod tests {
                 (element.kind, Value::Object(attributes))
             })
             .collect();
-        let kinds: Vec<&str> = elements.iter().map(|(kind, _)| *kind).collect();
-        assert_eq!(kinds, ["operation", "input", "output", "error"].repeat(2));
+        let kinds: Vec<ElementKind> = elements.iter().map(|(kind, _)| *kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                ElementKind::Operation,
+                ElementKind::Input,
+                ElementKind::Output,
+                ElementKind::Error,
+            ]
+            .repeat(2)
+        );
         assert_eq!(
             elements[0].1,
             json!({"name": "createOrder", "description": "Creates an order"})

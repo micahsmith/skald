@@ -3,13 +3,15 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 use serde_json::Value;
 
+use super::check::ElementKind;
+
 /// A typed record seen as a flat list of elements, so that records of every kind compare alike.
 pub trait Diffable {
     /// Every element in document order, each element before its children.
     fn elements(&self) -> Vec<Element>;
 
     /// The id and kind of every element, in the order of `elements`.
-    fn ids(&self) -> Vec<(String, &'static str)> {
+    fn ids(&self) -> Vec<(String, ElementKind)> {
         self.elements()
             .into_iter()
             .map(|element| (element.id, element.kind))
@@ -21,7 +23,7 @@ pub trait Diffable {
 /// included.
 #[derive(Clone, Debug)]
 pub struct Element {
-    pub kind: &'static str,
+    pub kind: ElementKind,
     pub id: String,
     pub attributes: Vec<(&'static str, Value)>,
 }
@@ -98,7 +100,7 @@ impl Element {
 
     fn item(&self) -> Item {
         Item {
-            kind: self.kind,
+            kind: self.kind.noun(),
             id: self.id.clone(),
             name: self
                 .attribute("name")
@@ -122,7 +124,7 @@ mod tests {
         }
     }
 
-    fn element(kind: &'static str, id: &str, attributes: &[(&'static str, Value)]) -> Element {
+    fn element(kind: ElementKind, id: &str, attributes: &[(&'static str, Value)]) -> Element {
         Element {
             kind,
             id: id.to_owned(),
@@ -132,7 +134,7 @@ mod tests {
 
     fn entity(id: &str, name: &str, description: Value) -> Element {
         element(
-            "entity",
+            ElementKind::Entity,
             id,
             &[("name", json!(name)), ("description", description)],
         )
@@ -140,7 +142,7 @@ mod tests {
 
     fn field(id: &str, parent: &str, nullable: bool) -> Element {
         element(
-            "field",
+            ElementKind::Field,
             id,
             &[
                 ("parent", json!(parent)),
@@ -229,7 +231,11 @@ mod tests {
     #[test]
     fn items_serialize_with_a_null_name_when_unnamed() {
         let from = Elements(vec![]);
-        let to = Elements(vec![element("relation", "r1", &[("name", Value::Null)])]);
+        let to = Elements(vec![element(
+            ElementKind::Relation,
+            "r1",
+            &[("name", Value::Null)],
+        )]);
         assert_eq!(
             serde_json::to_value(diff(&from, &to)).unwrap(),
             json!({

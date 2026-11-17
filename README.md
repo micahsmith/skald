@@ -101,7 +101,7 @@ These environment variables change where skald reads and writes files:
 | --- | --- | --- |
 | `SKALD_HOME` | `~/.skald` | The data directory. It holds the store file `skald.db` and the adapter markers. |
 | `CLAUDE_CONFIG_DIR` | `~/.claude` | The Claude Code configuration directory. Setup writes the session hook to its `settings.json`. |
-| `CLAUDE_CODE_PLUGIN_CACHE_DIR` | `plugins` in the Claude Code configuration directory | The directory that holds `installed_plugins.json`, which shows whether the plugin is installed. |
+| `CLAUDE_CODE_PLUGIN_CACHE_DIR` | `plugins` in the Claude Code configuration directory | The directory that holds `installed_plugins.json`, which shows whether the plugin is installed. A leading `~` expands to `HOME`. |
 
 ## Layout
 

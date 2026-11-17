@@ -61,6 +61,29 @@ fn identity_is_the_root_path_without_origin() {
 }
 
 #[test]
+fn separate_git_dirs_in_one_folder_have_different_identities() {
+    let sandbox = Sandbox::new();
+    let gits = sandbox.root.join("gits");
+    std::fs::create_dir_all(&gits).unwrap();
+    let mut identities = Vec::new();
+    for name in ["a", "b"] {
+        let repo = sandbox.root.join(name);
+        std::fs::create_dir_all(&repo).unwrap();
+        let git_dir = format!(
+            "--separate-git-dir={}",
+            gits.join(format!("{name}.git")).display()
+        );
+        sandbox.git(
+            &repo,
+            &["init", "--quiet", "--initial-branch=main", &git_dir],
+        );
+        sandbox.git(&repo, &["commit", "--quiet", "--allow-empty", "-m", "init"]);
+        identities.push(sandbox.json(&repo, &[])["repository"]["identity"].clone());
+    }
+    assert_ne!(identities[0], identities[1]);
+}
+
+#[test]
 fn worktrees_share_identity() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();

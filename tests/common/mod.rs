@@ -67,18 +67,32 @@ pub fn keys(value: &Value) -> Vec<&str> {
 /// Submits `contents` as design `name` of `kind`, in JSON or TOON, and returns skald's output.
 pub fn submit(sandbox: &Sandbox, dir: &Path, kind: &str, name: &str, contents: &str) -> Value {
     let file = sandbox.file(&format!("{name}.{kind}"), contents);
+    sandbox.json(dir, &submit_args(kind, name, &file))
+}
+
+pub fn submit_args<'a>(kind: &'a str, name: &'a str, file: &'a Path) -> [&'a str; 8] {
     let file = file.to_str().unwrap();
-    sandbox.json(
-        dir,
-        &[
-            "design", "submit", "--kind", kind, "--name", name, "--file", file,
-        ],
-    )
+    [
+        "design", "submit", "--kind", kind, "--name", name, "--file", file,
+    ]
 }
 
 pub fn submit_id(sandbox: &Sandbox, dir: &Path, kind: &str, name: &str, contents: &str) -> String {
-    let submitted = submit(sandbox, dir, kind, name, contents);
-    submitted["design"]["id"].as_str().unwrap().to_owned()
+    id_of(&submit(sandbox, dir, kind, name, contents)).to_owned()
+}
+
+pub fn id_of(submitted: &Value) -> &str {
+    submitted["design"]["id"].as_str().unwrap()
+}
+
+pub fn repo_path(path: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+}
+
+pub fn read(path: &str) -> String {
+    let path = repo_path(path);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()))
 }
 
 /// A temporary directory that holds every location skald and git read, so that tests never touch

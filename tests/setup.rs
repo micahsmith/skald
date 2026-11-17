@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use assert_cmd::assert::OutputAssertExt;
-use common::{ORIGIN, Sandbox, keys};
+use common::{ORIGIN, Sandbox, keys, submit};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
@@ -161,26 +161,6 @@ fn snapshot(dirs: &[&Path]) -> BTreeMap<PathBuf, (Vec<u8>, SystemTime)> {
     files
 }
 
-fn submit_design(sandbox: &Sandbox, repo: &Path, name: &str) {
-    let model = sandbox.file(
-        "model.json",
-        r#"{"entities": [{"name": "Order", "fields": [{"name": "id", "type": "uuid"}]}]}"#,
-    );
-    sandbox.json(
-        repo,
-        &[
-            "design",
-            "submit",
-            "--kind",
-            "data-model",
-            "--name",
-            name,
-            "--file",
-            model.to_str().unwrap(),
-        ],
-    );
-}
-
 #[test]
 fn setup_installs_the_hook() {
     let sandbox = Sandbox::new();
@@ -238,7 +218,13 @@ fn setup_installs_the_hook() {
 fn hook_prints_the_home_view() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);
-    submit_design(&sandbox, &repo, "order-intake");
+    submit(
+        &sandbox,
+        &repo,
+        "data-model",
+        "order-intake",
+        r#"{"entities": [{"name": "Order", "fields": [{"name": "id", "type": "uuid"}]}]}"#,
+    );
     sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
     let command = skald_commands(&read_json(&settings_path(&sandbox))).remove(0);
 
@@ -283,9 +269,9 @@ fn settings_file_is_private() {
     assert_eq!(mode(&sandbox), 0o600);
 
     write_json(&settings_path(&sandbox), &json!({"model": "opus"}));
-    std::fs::set_permissions(settings_path(&sandbox), PermissionsExt::from_mode(0o600)).unwrap();
+    std::fs::set_permissions(settings_path(&sandbox), PermissionsExt::from_mode(0o640)).unwrap();
     sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
-    assert_eq!(mode(&sandbox), 0o600);
+    assert_eq!(mode(&sandbox), 0o640);
 }
 
 #[test]
@@ -461,6 +447,36 @@ fn outdated_adapter_is_reported() {
 }
 
 #[test]
+fn newer_adapter_suggests_upgrade_not_setup() {
+    let sandbox = Sandbox::new();
+    write_json(
+        &marker_path(&sandbox),
+        &json!({
+            "runtime": "claude-code",
+            "version": "99.0.0",
+            "command": "skald hook claude-code",
+            "settings": settings_path(&sandbox),
+            "installed_at": "2026-01-01T00:00:00Z"
+        }),
+    );
+    install_plugin(
+        &sandbox,
+        &plugins_dir(&sandbox),
+        "code-skillset@skald",
+        Some("0.1.0"),
+    );
+
+    let home = sandbox.json(&sandbox.work, &[]);
+    assert_eq!(home["adapters"][0]["status"], "newer");
+    let lines = help(&home);
+    assert!(
+        lines.iter().any(|line| line.starts_with("cargo install")),
+        "home:\n{home:#}"
+    );
+    assert!(!lines.contains(&"skald setup"), "home:\n{home:#}");
+}
+
+#[test]
 fn current_adapter_is_reported() {
     let sandbox = Sandbox::new();
     sandbox.json(&sandbox.work, &["setup", "--no-plugin"]);
@@ -513,6 +529,22 @@ fn plugin_without_a_minimum_is_unknown() {
     let home = sandbox.json(&sandbox.work, &[]);
     assert_eq!(home["plugin"]["status"], "unknown");
     assert_eq!(home["plugin"]["min_skald_version"], Value::Null);
+}
+
+#[test]
+fn plugin_with_a_missing_install_folder_names_the_path() {
+    let sandbox = Sandbox::new();
+    let missing = sandbox.root.join("plugin-cache/gone");
+    write_json(
+        &plugins_dir(&sandbox).join("installed_plugins.json"),
+        &installed_plugins("code-skillset@skald", &missing),
+    );
+
+    let home = sandbox.json(&sandbox.work, &[]);
+    assert_eq!(home["plugin"]["status"], "unknown");
+    let detail = home["plugin"]["detail"].as_str().unwrap();
+    assert!(detail.contains(&missing.display().to_string()), "{detail}");
+    assert!(!detail.contains("declares no minimum"), "{detail}");
 }
 
 #[test]
@@ -572,6 +604,23 @@ fn plugin_cache_directory_can_be_overridden() {
         .cmd()
         .args(["--json"])
         .env("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache)
+        .output()
+        .unwrap();
+    let home: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(home["plugin"]["status"], "current");
+}
+
+#[test]
+fn plugin_cache_directory_expands_a_leading_tilde() {
+    let sandbox = Sandbox::new();
+    let cache = sandbox.home.join("claude-plugins");
+    std::fs::create_dir_all(&cache).unwrap();
+    install_plugin(&sandbox, &cache, "code-skillset@skald", Some(VERSION));
+
+    let output = sandbox
+        .cmd()
+        .args(["--json"])
+        .env("CLAUDE_CODE_PLUGIN_CACHE_DIR", "~/claude-plugins")
         .output()
         .unwrap();
     let home: Value = serde_json::from_slice(&output.stdout).unwrap();

@@ -7,10 +7,11 @@ This repository holds two things:
 - `code-skillset`, a plugin of skills and hooks for AI agents. The plugin is in `plugin/`. The
   marketplace manifest at `.claude-plugin/marketplace.json` points at it.
 
-The full test suite is:
+The full test suite is the local CI script. It runs `cargo fmt --check`, `cargo clippy`,
+`cargo test`, and a plugin smoke test:
 
 ```sh
-cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+bash scripts/ci.sh
 ```
 
 `skald dev seed --designs <N>` is a test-only command. It adds N data-model designs to the store

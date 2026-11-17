@@ -416,5 +416,10 @@ mod tests {
         for field in crate::design::FIELDS {
             assert!(help.contains(field), "{field} missing from:\n{help}");
         }
+        let defaults = crate::design::FIELDS[..crate::design::DEFAULT_FIELDS].join(", ");
+        assert!(
+            help.contains(&format!("The default is {defaults}")),
+            "defaults missing from:\n{help}"
+        );
     }
 }

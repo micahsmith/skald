@@ -175,7 +175,7 @@ fn merge_hook(settings: &mut Value, command: &str) -> Result<Status, &'static st
     let mut kept: Vec<Value> = Vec::with_capacity(before.len() + 1);
     let mut position = None;
     for mut existing in before.iter().cloned() {
-        let Some(hooks) = existing["hooks"].as_array_mut() else {
+        let Some(hooks) = existing.get_mut("hooks").and_then(Value::as_array_mut) else {
             kept.push(existing);
             continue;
         };
@@ -352,6 +352,20 @@ mod tests {
 
     fn skald_entry(command: &str) -> Value {
         json!({"hooks": [{"type": "command", "command": command, "timeout": 10}]})
+    }
+
+    #[test]
+    fn entries_that_are_not_hook_groups_are_left_unchanged() {
+        let mut settings = json!({"hooks": {"SessionStart": ["oops", {"matcher": "startup"}]}});
+        assert_eq!(merge_hook(&mut settings, COMMAND), Ok(Status::Installed));
+        assert_eq!(
+            settings,
+            json!({"hooks": {"SessionStart": [
+                "oops",
+                {"matcher": "startup"},
+                skald_entry(COMMAND),
+            ]}})
+        );
     }
 
     #[test]

@@ -36,14 +36,18 @@ pub fn resolve(cwd: &Path) -> Result<Option<RepoInfo>, SkaldError> {
     let identity = match url? {
         Some(url) => normalize_remote(&url),
         None => {
-            // Git older than 2.31 lacks `--path-format=absolute` and may print this path relative to `cwd`.
+            // Git older than 2.31 lacks `--path-format=absolute` and may print this path
+            // relative to `cwd`.
             let common_dir = absolute_from(cwd, common_dir)?;
-            // The common directory is shared by every worktree, so its parent is the main worktree.
-            common_dir
-                .parent()
-                .unwrap_or(&common_dir)
-                .display()
-                .to_string()
+            // The common directory is shared by every worktree. Its parent is the main worktree
+            // only when the directory is named `.git`; a `--separate-git-dir` repository has no
+            // such parent, so the common directory itself identifies it.
+            match common_dir.file_name() {
+                Some(name) if name == ".git" => common_dir.parent().unwrap_or(&common_dir),
+                _ => &common_dir,
+            }
+            .display()
+            .to_string()
         }
     };
     // `rev-parse --abbrev-ref HEAD` fails on a branch with no commits; `symbolic-ref` does not.
@@ -188,9 +192,9 @@ mod tests {
 
     #[test]
     fn absolute_from_joins_relative_and_keeps_absolute() {
-        let dir = std::env::temp_dir().join(format!("skald-abs-{}", std::process::id()));
+        let temp = tempfile::TempDir::new().unwrap();
+        let dir = temp.path().canonicalize().unwrap();
         std::fs::create_dir_all(dir.join("a/.git")).unwrap();
-        let dir = dir.canonicalize().unwrap();
         assert_eq!(
             absolute_from(&dir.join("a"), ".git").unwrap(),
             dir.join("a/.git")
@@ -198,6 +202,5 @@ mod tests {
         let abs = dir.join("a/.git");
         assert_eq!(absolute_from(&dir, abs.to_str().unwrap()).unwrap(), abs);
         assert!(absolute_from(&dir, "missing").is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

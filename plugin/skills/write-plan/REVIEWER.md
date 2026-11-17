@@ -35,18 +35,20 @@ gives the absolute paths of the plan, the spec when one exists, and the reposito
      the plan follow the spec.
    - `weak-test`: a test case whose setup cannot trigger the edge, error, or requirement that the
      test names. Name an input that the test misses and a wrong behavior that would still pass.
-     Some tests check that existing content survives a write. A write can have several branches,
-     such as adding an item, replacing one, or removing one. Judge each such test against every
-     branch that the plan states, not only the branch that its setup reaches. For each branch, find
-     every list or object that the branch changes in the real shape of the input, down to the
-     innermost one. The setup needs existing content beside the written item in each of them.
-     Otherwise, a write that replaces a whole list or object still passes. When a branch replaces
-     an existing item, check the real shape of that item. If that shape can hold content that the
-     write does not own, the setup also needs such content inside the item. Otherwise, a write that
-     drops that content still passes. Report a missed branch on the test that checks survival, even
-     when another test reaches that branch. When no test reaches that branch, also write a separate
-     `untested` finding for the branch.
-   - `untested`: a behavior in a slice's "What to Build" that no test case covers.
+     - For a test that checks that existing content survives a write, judge it against every
+       branch that the plan states, such as adding, replacing, or removing an item.
+     - In each branch, find every list or object that the branch changes in the real shape of the
+       input, down to the innermost one. The setup needs existing content beside the written item
+       in each of them. Otherwise, a write that replaces a whole list or object still passes.
+     - When a branch replaces an existing item, check the real shape of that item. If that shape
+       can hold content that the write does not own, the setup also needs such content inside the
+       item. Otherwise, a write that drops that content still passes.
+     - Report a missed branch on the test that checks survival, even when another test reaches
+       that branch.
+     - When no test reaches that branch, also write a separate `untested` finding for the branch.
+   - `untested`: a behavior in a slice's "What to Build" that no test case covers, or an edge or
+     error case of such a behavior that no test case covers. Name the input, such as a malformed
+     file or an empty list, that no test feeds.
    - `internal`: a slice item that contradicts one of the plan's shared decisions.
 5. **Write findings.** Every finding states its kind, its plan location, its spec location or
    `none`, a concrete scenario, and either one fix or two or more options.

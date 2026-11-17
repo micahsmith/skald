@@ -67,14 +67,17 @@ pub fn view(cwd: &Path) -> Result<Output, SkaldError> {
     if designs_count > designs.len() {
         help.push("skald design list".to_owned());
     }
+    let adapter_newer = adapters
+        .iter()
+        .any(|adapter| adapter.status == AdapterStatus::Newer);
     let adapters_current = !adapters.is_empty()
         && adapters
             .iter()
             .all(|adapter| adapter.status == AdapterStatus::Current);
-    if !adapters_current || plugin.status == PluginStatus::Missing {
+    if !adapter_newer && (!adapters_current || plugin.status == PluginStatus::Missing) {
         help.push("skald setup".to_owned());
     }
-    if plugin.status == PluginStatus::Outdated {
+    if adapter_newer || plugin.status == PluginStatus::Outdated {
         help.push(store::UPGRADE.to_owned());
     }
     if let (true, Some(id)) = (plugin.undeclared_minimum, plugin.id()) {

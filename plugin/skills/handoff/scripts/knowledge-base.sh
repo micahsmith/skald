@@ -5,6 +5,7 @@ set -euo pipefail
 export LC_ALL=C
 
 FOLDERS=(. .claude .agents .codex .cursor .gemini .kiro .goose .windsurf .opencode scratch tmp temp)
+MAX_LISTED=40
 
 usage() {
   echo "usage: bash knowledge-base.sh [init|index]" >&2
@@ -29,7 +30,11 @@ search() {
   local base="$1" folder candidate
   for folder in "${FOLDERS[@]}"; do
     [ -d "$base/$folder/.skald" ] || continue
-    candidate="$(cd "$base/$folder/.skald" && pwd -P)"
+    # A folder that cannot be entered is reported unresolved, so inspect can name it.
+    candidate="$(cd "$base/$folder/.skald" 2>/dev/null && pwd -P)" || {
+      printf '%s' "$base/$folder/.skald"
+      return
+    }
     if [ "$candidate" != "$data" ]; then
       printf '%s' "$candidate"
       return
@@ -99,17 +104,37 @@ config_error() {
   done <"$1"
 }
 
+# toon_quoted_to and toon_string_to set the variable named by $1, so a loop can quote names
+# without a subshell.
+toon_quoted_to() {
+  local escaped="$2" nl=$'\n' cr=$'\r' tab=$'\t'
+  escaped="${escaped//\\/\\\\}"
+  escaped="${escaped//\"/\\\"}"
+  escaped="${escaped//$nl/\\n}"
+  escaped="${escaped//$cr/\\r}"
+  escaped="${escaped//$tab/\\t}"
+  printf -v "$1" '"%s"' "$escaped"
+}
+
+toon_string_to() {
+  local plain="$2" bare='^[A-Za-z_/][A-Za-z0-9_./-]*$'
+  if [[ $plain =~ $bare ]] && [ "$plain" != true ] && [ "$plain" != false ] && [ "$plain" != null ]; then
+    printf -v "$1" '%s' "$plain"
+  else
+    toon_quoted_to "$1" "$plain"
+  fi
+}
+
 toon_quoted() {
-  printf '"%s"' "$(printf '%s' "$1" | sed 's/[\\"]/\\&/g')"
+  local quoted
+  toon_quoted_to quoted "$1"
+  printf '%s' "$quoted"
 }
 
 toon_string() {
-  local value="$1" bare='^[A-Za-z_/][A-Za-z0-9_./-]*$'
-  if [[ $value =~ $bare ]] && [ "$value" != true ] && [ "$value" != false ] && [ "$value" != null ]; then
-    printf '%s' "$value"
-  else
-    toon_quoted "$value"
-  fi
+  local text
+  toon_string_to text "$1"
+  printf '%s' "$text"
 }
 
 # Sets dir, exists, mode, ignored, and error from the files on disk.
@@ -125,6 +150,8 @@ inspect() {
   mode=markdown
   if [ "$dir" = "$data" ]; then
     error="$dir is the skald data directory, so it cannot hold a knowledge base"
+  elif [ "$exists" = true ] && [ ! -x "$dir" ]; then
+    error="cannot open $dir"
   elif [ -f "$dir/config.toon" ]; then
     error="$(config_error "$dir/config.toon" 2>/dev/null)" || error="cannot read $dir/config.toon"
     [ -z "$error" ] || mode=""
@@ -184,37 +211,51 @@ init() {
   inspect
 }
 
-# Prints "<seconds><tab><name>" for each folder in work folder $1, newest first.
+# Prints "<seconds><tab><date><tab><name>" for each folder in work folder $1, newest first. The
+# date is the local date of <seconds>. GNU stat prints three words for %y (date, time, zone), so
+# the name follows four words there and two words on BSD.
 folder_times() {
-  local work="$1" format
+  local work="$1" format words
   if stat -c %Y / >/dev/null 2>&1; then
-    format=(-c '%Y %n')
+    format=(-c '%Y %y %n')
+    words=4
   else
-    format=(-f '%m %N')
+    format=(-t %F -f '%m %Sm %N')
+    words=2
   fi
   {
     find "$work" -mindepth 1 -maxdepth 1 -type d -exec stat "${format[@]}" {} + 2>/dev/null || true
     find "$work" -mindepth 2 -type f -exec stat "${format[@]}" {} + 2>/dev/null || true
-  } | awk -v skip="$((${#work} + 1))" '
+  } | awk -v skip="$((${#work} + 1))" -v words="$words" '
     {
       seconds = $1 + 0
-      rest = substr($0, length($1) + 2 + skip)
+      day = $2
+      rest = $0
+      for (i = 0; i < words; i++) sub(/^[^ ]+ /, "", rest)
+      rest = substr(rest, skip + 1)
       slash = index(rest, "/")
       if (slash == 0) {
         own[rest] = seconds
+        ownday[rest] = day
         next
       }
       name = substr(rest, 1, slash - 1)
-      if (!(name in newest) || seconds > newest[name]) newest[name] = seconds
+      if (!(name in newest) || seconds > newest[name]) {
+        newest[name] = seconds
+        newday[name] = day
+      }
     }
     END {
-      for (name in own) print ((name in newest) ? newest[name] : own[name]) "\t" name
+      for (name in own) {
+        if (name in newest) print newest[name] "\t" newday[name] "\t" name
+        else print own[name] "\t" ownday[name] "\t" name
+      }
     }
-  ' | sort -t "$tab" -k1,1nr -k2
+  ' | sort -t "$tab" -k1,1nr -k3
 }
 
 index() {
-  local work="$dir/work" rows row total=0 listed=0 body="" header date_form updated temporary
+  local work="$dir/work" rows row total=0 listed=0 body="" header updated name temporary
   if [ -n "$error" ]; then
     report
     exit 1
@@ -226,22 +267,16 @@ index() {
   fi
   [ -d "$work" ] || create_folder "$work"
 
-  date_form=bsd
-  if date -d @0 +%F >/dev/null 2>&1; then
-    date_form=gnu
-  fi
   rows="$(folder_times "$work")"
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     total=$((total + 1))
-    [ "$listed" -lt 40 ] || continue
+    [ "$listed" -lt "$MAX_LISTED" ] || continue
     listed=$((listed + 1))
-    if [ "$date_form" = gnu ]; then
-      updated="$(date -d "@${row%%"$tab"*}" +%F)"
-    else
-      updated="$(date -r "${row%%"$tab"*}" +%F)"
-    fi
-    body="$body  $(toon_string "${row#*"$tab"}"),$updated"$'\n'
+    row="${row#*"$tab"}"
+    updated="${row%%"$tab"*}"
+    toon_string_to name "${row#*"$tab"}"
+    body="$body  $name,$updated"$'\n'
   done <<<"$rows"
   header="work[$listed]{name,updated}:"
   [ "$listed" -gt 0 ] || header="work: []"

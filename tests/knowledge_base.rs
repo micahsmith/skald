@@ -121,7 +121,7 @@ fn snapshot(sandbox: &Sandbox) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
 }
 
 #[test]
-fn missing_folder() {
+fn reports_a_missing_folder_in_the_repository_root_without_creating_it() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let before = snapshot(&sandbox);
@@ -137,7 +137,7 @@ fn missing_folder() {
 }
 
 #[test]
-fn root_wins() {
+fn the_repository_root_folder_wins_over_a_listed_folder() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -150,7 +150,7 @@ fn root_wins() {
 }
 
 #[test]
-fn scratch_folder() {
+fn a_listed_folder_is_found_when_the_root_has_none() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join("scratch/.skald"));
@@ -162,7 +162,7 @@ fn scratch_folder() {
 }
 
 #[test]
-fn list_order() {
+fn the_first_listed_folder_wins_when_several_exist() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join("temp/.skald"));
@@ -186,7 +186,7 @@ fn regular_file_is_no_match() {
 }
 
 #[test]
-fn subdirectory() {
+fn a_subdirectory_finds_the_folder_in_the_repository_root() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -199,7 +199,7 @@ fn subdirectory() {
 }
 
 #[test]
-fn outside_git() {
+fn outside_git_the_folder_is_looked_up_in_the_working_directory() {
     let sandbox = Sandbox::new();
 
     let output = knowledge_base(&sandbox, &sandbox.work);
@@ -210,7 +210,7 @@ fn outside_git() {
 }
 
 #[test]
-fn symbolic_link() {
+fn a_symbolic_link_to_the_repository_resolves_to_the_real_path() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -223,7 +223,7 @@ fn symbolic_link() {
 }
 
 #[test]
-fn own_gitignore() {
+fn a_gitignore_inside_the_folder_marks_it_ignored() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     write(&repo.join(".skald/.gitignore"), "*\n");
@@ -234,7 +234,7 @@ fn own_gitignore() {
 }
 
 #[test]
-fn not_ignored() {
+fn a_folder_without_a_gitignore_is_not_ignored() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -246,7 +246,7 @@ fn not_ignored() {
 }
 
 #[test]
-fn ignored_parent() {
+fn a_folder_ignored_by_the_repository_gitignore_is_ignored() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     write(&repo.join(".gitignore"), "scratch/\n");
@@ -259,7 +259,7 @@ fn ignored_parent() {
 }
 
 #[test]
-fn work_index_present() {
+fn the_work_index_path_is_reported_when_the_index_exists() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let index = repo.join(".skald/work/index.toon");
@@ -275,7 +275,7 @@ fn work_index_present() {
 }
 
 #[test]
-fn work_index_absent() {
+fn the_work_index_path_is_omitted_when_the_index_is_missing() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald/work"));
@@ -303,7 +303,7 @@ fn output_ignores_folder_count() {
 }
 
 #[test]
-fn path_needs_quotes() {
+fn a_path_with_quotes_and_backslashes_is_quoted() {
     let sandbox = Sandbox::new();
     let repo = sandbox.root.join(r#"my "repo":1\x"#);
     mkdir(&repo);
@@ -319,7 +319,22 @@ fn path_needs_quotes() {
 }
 
 #[test]
-fn unknown_command() {
+fn newline_in_path_cannot_forge_lines() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.root.join("my\n  error: \"forged\"\r\tdir");
+    mkdir(&repo);
+    sandbox.git(&repo, &["init", "--quiet", "--initial-branch=main"]);
+    mkdir(&repo.join(".skald"));
+
+    let run = default_run(&sandbox, &repo);
+
+    assert_eq!(run.output["dir"], skald_dir(&repo));
+    assert_eq!(raw_keys(&run.stdout), ["dir", "exists", "mode", "ignored"]);
+    assert_eq!(run.stdout.lines().count(), 5, "stdout:\n{}", run.stdout);
+}
+
+#[test]
+fn an_unknown_command_prints_usage_and_exits_with_2() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
 
@@ -341,7 +356,7 @@ fn assert_data_directory_error(output: &Value) {
 }
 
 #[test]
-fn ignored_folder_in_main() {
+fn a_linked_worktree_reports_the_ignored_folder_of_the_main_checkout() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     write(&repo.join(".skald/.gitignore"), "*\n");
@@ -355,7 +370,7 @@ fn ignored_folder_in_main() {
 }
 
 #[test]
-fn worktree_copy_wins() {
+fn a_folder_in_the_linked_worktree_wins_over_the_main_checkout() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -368,7 +383,7 @@ fn worktree_copy_wins() {
 }
 
 #[test]
-fn nothing_in_either_checkout() {
+fn a_linked_worktree_without_any_folder_reports_the_main_checkout_path() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let wt = sandbox.worktree(&repo, "wt");
@@ -380,7 +395,7 @@ fn nothing_in_either_checkout() {
 }
 
 #[test]
-fn bare_repository() {
+fn a_worktree_of_a_bare_repository_reports_its_own_path_without_error() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let bare = sandbox.root.join("bare.git");
@@ -415,7 +430,7 @@ fn bare_repository() {
 }
 
 #[test]
-fn submodule() {
+fn a_submodule_uses_its_own_checkout() {
     let sandbox = Sandbox::new();
     let library = sandbox.repo_without_origin();
     let repo = sandbox.repo_without_origin();
@@ -439,7 +454,7 @@ fn submodule() {
 }
 
 #[test]
-fn data_directory_candidate() {
+fn a_folder_that_is_the_skald_data_directory_is_an_error() {
     let sandbox = Sandbox::new();
     let data = sandbox.work.join(".skald");
     mkdir(&data);
@@ -452,7 +467,7 @@ fn data_directory_candidate() {
 }
 
 #[test]
-fn data_directory_through_a_link() {
+fn a_link_to_the_skald_data_directory_is_an_error() {
     let sandbox = Sandbox::new();
     let data = sandbox.work.join(".skald");
     mkdir(&data);
@@ -467,7 +482,7 @@ fn data_directory_through_a_link() {
 }
 
 #[test]
-fn default_data_directory_missing() {
+fn the_default_data_directory_is_an_error_when_it_is_missing() {
     let sandbox = Sandbox::new();
     let mut cmd = script(&sandbox, &sandbox.work);
     cmd.env_remove("SKALD_HOME").env("HOME", &sandbox.work);
@@ -478,7 +493,7 @@ fn default_data_directory_missing() {
 }
 
 #[test]
-fn data_directory_elsewhere() {
+fn a_folder_is_valid_when_the_data_directory_is_elsewhere() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -509,7 +524,7 @@ fn assert_config_error(output: &Value, fragment: &str) {
 }
 
 #[test]
-fn no_config() {
+fn a_folder_without_a_config_uses_markdown_mode() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     mkdir(&repo.join(".skald"));
@@ -518,22 +533,22 @@ fn no_config() {
 }
 
 #[test]
-fn blank_config() {
+fn a_blank_config_uses_markdown_mode() {
     assert_markdown(&with_config("\n\n   \n").output);
 }
 
 #[test]
-fn quoted_value() {
+fn a_quoted_mode_value_is_accepted() {
     assert_markdown(&with_config("mode: \"markdown\"\n").output);
 }
 
 #[test]
-fn blank_line_before_key() {
+fn a_blank_line_before_the_key_is_accepted() {
     assert_markdown(&with_config("\nmode: markdown\n").output);
 }
 
 #[test]
-fn skald_mode() {
+fn skald_mode_is_reported_as_unavailable() {
     assert_config_error(
         &with_config("mode: skald\n").output,
         "skald mode is not available yet",
@@ -541,7 +556,7 @@ fn skald_mode() {
 }
 
 #[test]
-fn unknown_mode() {
+fn an_unknown_mode_is_an_error() {
     assert_config_error(
         &with_config("mode: files\n").output,
         "only valid value is markdown",
@@ -549,7 +564,7 @@ fn unknown_mode() {
 }
 
 #[test]
-fn empty_mode() {
+fn an_empty_mode_is_an_error() {
     assert_config_error(
         &with_config("mode:\n").output,
         "only valid value is markdown",
@@ -557,12 +572,12 @@ fn empty_mode() {
 }
 
 #[test]
-fn unknown_key() {
+fn an_unknown_key_is_an_error_on_its_line() {
     assert_config_error(&with_config("colour: blue\n").output, "line 1");
 }
 
 #[test]
-fn not_a_pair() {
+fn a_line_without_a_colon_is_an_error_on_its_line() {
     assert_config_error(&with_config("mode markdown\n").output, "line 1");
 }
 
@@ -575,7 +590,7 @@ fn line_number_counts_blanks() {
 }
 
 #[test]
-fn unreadable_config() {
+fn an_unreadable_config_is_an_error() {
     use std::os::unix::fs::PermissionsExt;
 
     let sandbox = Sandbox::new();
@@ -594,7 +609,38 @@ fn unreadable_config() {
 }
 
 #[test]
-fn field_order_with_error() {
+fn a_folder_that_cannot_be_entered_is_reported_as_an_error_and_blocks_init_and_index() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_without_origin();
+    let folder = repo.join(".skald");
+    mkdir(&folder);
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Root enters the folder despite its mode, so the case cannot be set up.
+    if std::fs::read_dir(&folder).is_ok() {
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
+
+    let default = default_run(&sandbox, &repo);
+    let init = init(&sandbox, &repo);
+    let index = index(&sandbox, &repo);
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert!(default.output["dir"].as_str().unwrap().ends_with("/.skald"));
+    assert!(
+        default.output["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("cannot open")
+    );
+    assert_failed(&init, "cannot open");
+    assert_failed(&index, "cannot open");
+}
+
+#[test]
+fn the_error_field_comes_last_in_the_output() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     write(&repo.join(".skald/config.toon"), "mode: skald\n");
@@ -629,7 +675,7 @@ fn read(path: &Path) -> String {
 }
 
 #[test]
-fn fresh_init() {
+fn init_creates_the_config_gitignore_and_work_folder() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
 
@@ -699,7 +745,7 @@ fn existing_config_is_kept() {
 }
 
 #[test]
-fn init_in_linked_worktree() {
+fn init_in_a_linked_worktree_creates_the_folder_in_the_main_checkout() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let wt = sandbox.worktree(&repo, "wt");
@@ -712,7 +758,7 @@ fn init_in_linked_worktree() {
 }
 
 #[test]
-fn init_outside_git() {
+fn init_outside_git_creates_the_folder_in_the_working_directory() {
     let sandbox = Sandbox::new();
 
     let output = init_ok(&sandbox, &sandbox.work).output;
@@ -751,7 +797,7 @@ fn data_directory_blocks_init() {
 }
 
 #[test]
-fn cannot_create() {
+fn init_fails_when_the_folder_path_is_a_regular_file() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let file = repo.join(".skald");
@@ -820,7 +866,7 @@ fn write_at(sandbox: &Sandbox, path: &Path, stamp: &str) {
 }
 
 #[test]
-fn truncates_to_40() {
+fn the_index_keeps_only_the_newest_40_folders() {
     let sandbox = Sandbox::new();
     let (repo, work) = initialized(&sandbox);
     for number in 1..=41 {
@@ -861,7 +907,7 @@ fn deep_edit_moves_a_folder_first() {
 }
 
 #[test]
-fn ties_sort_by_name() {
+fn folders_with_equal_times_are_sorted_by_name() {
     let sandbox = Sandbox::new();
     let (repo, work) = initialized(&sandbox);
     write_at(&sandbox, &work.join("beta/notes.md"), "202603011200");
@@ -873,7 +919,7 @@ fn ties_sort_by_name() {
 }
 
 #[test]
-fn empty_folder() {
+fn an_empty_folder_is_dated_by_its_own_time() {
     let sandbox = Sandbox::new();
     let (repo, work) = initialized(&sandbox);
     let empty = work.join("empty");
@@ -898,7 +944,7 @@ fn file_time_beats_folder_time() {
 }
 
 #[test]
-fn names_that_need_quotes() {
+fn folder_names_that_need_quotes_are_kept_as_strings() {
     let sandbox = Sandbox::new();
     let (repo, work) = initialized(&sandbox);
     for name in ["a,b", "2026", "two words"] {
@@ -918,7 +964,7 @@ fn names_that_need_quotes() {
 }
 
 #[test]
-fn no_folders() {
+fn an_empty_work_folder_gives_an_empty_index() {
     let sandbox = Sandbox::new();
     let (repo, _) = initialized(&sandbox);
 
@@ -941,7 +987,7 @@ fn index_creates_missing_work() {
 }
 
 #[test]
-fn index_is_not_a_folder() {
+fn an_existing_index_file_is_not_counted_as_a_folder() {
     let sandbox = Sandbox::new();
     let (repo, work) = initialized(&sandbox);
     write_at(&sandbox, &work.join("only/notes.md"), "202605011200");
@@ -957,7 +1003,7 @@ fn index_is_not_a_folder() {
 }
 
 #[test]
-fn missing_knowledge_base() {
+fn index_fails_when_the_knowledge_base_is_missing() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let before = snapshot(&sandbox);

@@ -39,6 +39,8 @@ pub fn serve(
     let idle = Duration::from_secs(idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT));
     let html = Header::from_bytes("Content-Type", "text/html; charset=utf-8")
         .expect("the header is valid");
+    let text = Header::from_bytes("Content-Type", "text/plain; charset=UTF-8")
+        .expect("the header is valid");
     // Omitting `allow-same-origin` gives the page an opaque origin, so its scripts cannot reach
     // cookies or storage of other servers on 127.0.0.1.
     let sandbox = Header::from_bytes(
@@ -55,14 +57,20 @@ pub fn serve(
             .iter()
             .find(|header| header.field.equiv("Host"))
             .is_some_and(|header| !is_local_host(header.value.as_str()));
-        let response = if foreign_host {
-            Response::from_string("forbidden\n").with_status_code(403)
+        let (status, content_type, body) = if foreign_host {
+            (403, &text, &b"forbidden\n"[..])
         } else if is_page(request.url()) {
-            Response::from_data(page.as_bytes()).with_header(html.clone())
+            (200, &html, page.as_bytes())
         } else {
-            Response::from_string("not found\n").with_status_code(404)
+            (404, &text, &b"not found\n"[..])
         };
-        let response = response.with_header(sandbox.clone());
+        let response = Response::new(
+            status.into(),
+            vec![content_type.clone(), sandbox.clone()],
+            body,
+            Some(body.len()),
+            None,
+        );
         // A client that hangs up early must not stop the server.
         let _ = request.respond(response);
     }

@@ -130,21 +130,21 @@ impl Diffable for DataModelRecord {
         elements
     }
 
-    fn ids(&self) -> Vec<(String, &'static str)> {
+    fn ids(&self) -> Vec<(String, ElementKind)> {
         let mut ids = Vec::new();
         for entity in &self.entities {
-            ids.push((entity.id.clone(), ElementKind::Entity.noun()));
+            ids.push((entity.id.clone(), ElementKind::Entity));
             ids.extend(
                 entity
                     .fields
                     .iter()
-                    .map(|field| (field.id.clone(), ElementKind::Field.noun())),
+                    .map(|field| (field.id.clone(), ElementKind::Field)),
             );
             ids.extend(
                 entity
                     .relations
                     .iter()
-                    .map(|relation| (relation.id.clone(), ElementKind::Relation.noun())),
+                    .map(|relation| (relation.id.clone(), ElementKind::Relation)),
             );
         }
         ids
@@ -548,7 +548,7 @@ mod tests {
     fn elements_carry_their_parent_and_compared_attributes() {
         let record = DataModelRecord::validate(&example(), None).unwrap();
         let order = &record.entities[0];
-        let elements: Vec<(&str, String, Value)> = record
+        let elements: Vec<(ElementKind, String, Value)> = record
             .elements()
             .into_iter()
             .map(|element| {
@@ -560,15 +560,22 @@ mod tests {
                 (element.kind, element.id, Value::Object(attributes))
             })
             .collect();
-        let kinds: Vec<&str> = elements.iter().map(|(kind, _, _)| *kind).collect();
+        let kinds: Vec<ElementKind> = elements.iter().map(|(kind, _, _)| *kind).collect();
         assert_eq!(
             kinds,
-            ["entity", "field", "field", "relation", "entity", "field"]
+            [
+                ElementKind::Entity,
+                ElementKind::Field,
+                ElementKind::Field,
+                ElementKind::Relation,
+                ElementKind::Entity,
+                ElementKind::Field,
+            ]
         );
         assert_eq!(
             elements[0],
             (
-                "entity",
+                ElementKind::Entity,
                 order.id.clone(),
                 json!({"name": "Order", "description": "A customer order"})
             )

@@ -49,11 +49,18 @@ pub fn claude_config_dir() -> Result<PathBuf, SkaldError> {
 }
 
 /// `$CLAUDE_CODE_PLUGIN_CACHE_DIR` when set, otherwise `plugins` in the Claude Code config
-/// directory.
+/// directory. Like Claude Code, this expands a leading `~` in the variable.
 pub fn claude_plugins_dir() -> Result<PathBuf, SkaldError> {
     match env_dir("CLAUDE_CODE_PLUGIN_CACHE_DIR") {
-        Some(dir) => Ok(dir),
+        Some(dir) => Ok(expand_tilde(dir)),
         None => Ok(claude_config_dir()?.join("plugins")),
+    }
+}
+
+fn expand_tilde(dir: PathBuf) -> PathBuf {
+    match (dir.strip_prefix("~"), home_dir()) {
+        (Ok(rest), Some(home)) => home.join(rest),
+        _ => dir,
     }
 }
 

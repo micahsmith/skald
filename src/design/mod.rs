@@ -29,8 +29,8 @@ use render::DesignHeader;
 
 pub const SUBMIT_HELP: &str = "skald design submit --kind data-model --name <name> --file <path>";
 
-/// Fields a list item may carry. The first four are shown by default.
-pub(crate) const FIELDS: [&str; 7] = [
+/// Fields a list item may carry.
+pub const FIELDS: [&str; 7] = [
     "id",
     "name",
     "kind",
@@ -39,6 +39,9 @@ pub(crate) const FIELDS: [&str; 7] = [
     "created_at",
     "submitted_at",
 ];
+
+/// How many leading entries of `FIELDS` a list item shows by default.
+pub const DEFAULT_FIELDS: usize = 4;
 
 const DEFAULT_LIMIT: usize = 50;
 
@@ -189,7 +192,13 @@ fn submit(
             Some(canonical::<InterfaceRecord>(&text, newest.as_ref())?),
             None,
         ),
-        Kind::Freeform => (None, Some(freeform(text)?)),
+        Kind::Freeform => (
+            None,
+            Some(freeform(
+                text,
+                newest.as_ref().map(|newest| newest.id.as_str()),
+            )?),
+        ),
     };
     let (record, html) = (record.as_deref(), html.as_deref());
 
@@ -247,12 +256,15 @@ fn canonical<T: Typed>(text: &str, newest: Option<&Newest>) -> Result<String, Sk
     Ok(serde_json::to_string(&record).expect("a record always serializes"))
 }
 
-fn freeform(html: String) -> Result<String, SkaldError> {
+fn freeform(html: String, id: Option<&str>) -> Result<String, SkaldError> {
     if html.trim().is_empty() {
         return Err(
             SkaldError::new("empty-submission", "the submitted file holds no HTML")
                 .with_help("skald design submit --kind freeform --name <name> --file <path>"),
         );
+    }
+    if output::is_truncated(html.trim_end()) {
+        return Err(rejected(vec![truncated_problem(String::new(), id)]));
     }
     Ok(html)
 }
@@ -682,7 +694,7 @@ pub struct Summary {
 impl Summary {
     /// The default fields followed by `extra` in the order given. Unknown names are skipped.
     pub fn item(&self, extra: &[String]) -> Value {
-        let names = FIELDS[..4].iter().copied();
+        let names = FIELDS[..DEFAULT_FIELDS].iter().copied();
         let names = names.chain(extra.iter().map(String::as_str));
         let item: Map<String, Value> = names
             .filter_map(|name| Some((name.to_owned(), self.field(name)?)))
@@ -704,6 +716,7 @@ impl Summary {
     }
 }
 
+// rowid breaks ties between designs created within the same second.
 const SUMMARIES_SQL: &str =
     "SELECT d.id, d.name, d.kind, v.number, d.branch, d.created_at, v.submitted_at
      FROM design d JOIN design_version v ON v.design = d.id
@@ -723,7 +736,6 @@ pub fn summaries(
         [repository],
         |row| row.get(0),
     )?;
-    // rowid breaks ties between designs created within the same second.
     let mut statement = conn.prepare(SUMMARIES_SQL)?;
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let summaries = statement
@@ -756,9 +768,8 @@ fn repository(cwd: &Path) -> Result<RepoInfo, SkaldError> {
 }
 
 fn begin(store: &mut Store, info: RepoInfo) -> Result<(Transaction<'_>, RepoContext), SkaldError> {
-    let tx = store.transaction()?;
-    let repo = RepoContext::find_or_insert(&tx, info)?;
-    Ok((tx, repo))
+    let repo = ensure_repository(store, info)?;
+    Ok((store.transaction()?, repo))
 }
 
 /// Opens a deferred transaction for a command that only reads. The repository row is inserted on
@@ -768,19 +779,26 @@ pub fn begin_read(
     store: &mut Store,
     info: RepoInfo,
 ) -> Result<(Transaction<'_>, RepoContext), SkaldError> {
-    let tx = store.read_transaction()?;
-    let found = RepoContext::find(&tx, info)?;
-    drop(tx);
-    let repo = match found {
-        Ok(repo) => repo,
-        Err(info) => {
-            let tx = store.transaction()?;
-            let repo = RepoContext::find_or_insert(&tx, info)?;
-            tx.commit()?;
-            repo
-        }
-    };
+    let repo = ensure_repository(store, info)?;
     Ok((store.read_transaction()?, repo))
+}
+
+/// Finds the repository row with a deferred lookup. When the row is missing, it asks git for the
+/// default branch with no lock held, then inserts the row in a short `IMMEDIATE` transaction.
+fn ensure_repository(store: &mut Store, info: RepoInfo) -> Result<RepoContext, SkaldError> {
+    let tx = store.read_transaction()?;
+    let found = RepoContext::find(&tx, &info)?;
+    drop(tx);
+    match found {
+        Some(repo) => Ok(repo),
+        None => {
+            let default_branch = git::default_branch(&info.root)?;
+            let tx = store.transaction()?;
+            let repo = RepoContext::find_or_insert(&tx, info, default_branch)?;
+            tx.commit()?;
+            Ok(repo)
+        }
+    }
 }
 
 fn read(file: &str) -> Result<String, SkaldError> {
@@ -812,24 +830,28 @@ fn decode<T: DeserializeOwned>(text: &str, id: Option<&str>) -> Result<T, Vec<Pr
     serde_json::from_value(value).map_err(|err| vec![invalid_format(err.to_string())])
 }
 
+fn truncated_problem(path: String, id: Option<&str>) -> Problem {
+    let command = id.map_or_else(
+        || "skald design get <id> --full".to_owned(),
+        |id| format!("skald design get {id} --full"),
+    );
+    Problem {
+        path,
+        id: None,
+        code: "truncated-text",
+        message: format!(
+            "text ends with the marker that `get` adds to long text; read the full text with `{command}`"
+        ),
+    }
+}
+
 /// Adds a problem for each string in `value` that `get` cut short, because storing it would lose
 /// the rest of the text.
 fn truncated_text(value: &Value, path: &mut String, id: Option<&str>, problems: &mut Vec<Problem>) {
     let length = path.len();
     match value {
         Value::String(text) if output::is_truncated(text) => {
-            let command = id.map_or_else(
-                || "skald design get <id> --full".to_owned(),
-                |id| format!("skald design get {id} --full"),
-            );
-            problems.push(Problem {
-                path: path.clone(),
-                id: None,
-                code: "truncated-text",
-                message: format!(
-                    "text ends with the marker that `get` adds to long text; read the full text with `{command}`"
-                ),
-            });
+            problems.push(truncated_problem(path.clone(), id));
         }
         Value::Array(items) => {
             for (index, item) in items.iter().enumerate() {
@@ -841,7 +863,7 @@ fn truncated_text(value: &Value, path: &mut String, id: Option<&str>, problems: 
         Value::Object(map) => {
             for (key, item) in map {
                 path.push('/');
-                path.push_str(&key.replace('~', "~0").replace('/', "~1"));
+                path.push_str(&check::pointer_token(key));
                 truncated_text(item, path, id, problems);
                 path.truncate(length);
             }

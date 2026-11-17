@@ -3,7 +3,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use common::Sandbox;
+use common::{Sandbox, read, repo_path};
 use serde_json::Value;
 
 const KNOWLEDGE_BASE_COMMAND: &str = r#"bash "${CLAUDE_PLUGIN_ROOT}/hooks/knowledge-base.sh""#;
@@ -28,16 +28,6 @@ under `work/`, run `bash scripts/knowledge-base.sh index`.";
 
 const END_MARKER: &str = "<!-- end shared -->";
 
-fn repo_path(path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
-}
-
-fn read(path: &str) -> String {
-    let path = repo_path(path);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()))
-}
-
 /// The command of every hook that `plugin/hooks/hooks.json` registers for `event`.
 fn hook_commands(event: &str) -> Vec<String> {
     let config: Value = serde_json::from_str(&read("plugin/hooks/hooks.json")).unwrap();
@@ -55,7 +45,7 @@ fn runs_knowledge_base(command: &str) -> bool {
 }
 
 #[test]
-fn session_start_command() {
+fn session_start_runs_guides_and_the_knowledge_base_once() {
     let commands = hook_commands("SessionStart");
     let knowledge_base: Vec<_> = commands
         .iter()
@@ -70,7 +60,7 @@ fn session_start_command() {
 }
 
 #[test]
-fn no_subagent_command() {
+fn subagent_start_runs_guides_but_not_the_knowledge_base() {
     let commands = hook_commands("SubagentStart");
     let guides = r#"bash "${CLAUDE_PLUGIN_ROOT}/hooks/emit-guides.sh" subagent"#;
     assert!(
@@ -84,7 +74,7 @@ fn no_subagent_command() {
 }
 
 #[test]
-fn hook_command_runs() {
+fn the_session_start_knowledge_base_command_runs_and_prints_the_folder_report() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
     let command = hook_commands("SessionStart")
@@ -403,22 +393,22 @@ fn skill(name: &str) -> String {
 const SCRATCH_FOLDERS: [&str; 3] = ["tmp/", "temp/", "scratch/"];
 
 #[test]
-fn write_spec_path() {
+fn write_spec_saves_to_the_work_folder() {
     assert!(skill("write-spec").contains("`work/<name>/spec-<date>.md`"));
 }
 
 #[test]
-fn write_plan_path() {
+fn write_plan_saves_to_the_work_folder() {
     assert!(skill("write-plan").contains("`work/<name>/plan-<date>.md`"));
 }
 
 #[test]
-fn deep_review_path() {
+fn deep_review_saves_to_the_work_folder() {
     assert!(skill("deep-review").contains("`work/<name>/review-<target>-<date>.md`"));
 }
 
 #[test]
-fn handoff_path() {
+fn handoff_saves_to_the_handoffs_folder() {
     let text = skill("handoff");
     assert!(text.contains("`handoffs/handoff-<summary>-<date>.md`"));
     assert!(!text.contains("<short-summary>"));
@@ -427,12 +417,12 @@ fn handoff_path() {
 const NEWEST_REVIEW_COMMAND: &str = r#"ls -t "<dir>"/work/*/review-*.md | head -1"#;
 
 #[test]
-fn merge_review_command() {
+fn merge_review_finds_the_newest_review_with_the_shared_command() {
     assert!(skill("merge-review").contains(NEWEST_REVIEW_COMMAND));
 }
 
 #[test]
-fn resolve_review_command() {
+fn resolve_review_finds_the_newest_review_with_the_shared_command() {
     assert!(skill("resolve-review").contains(NEWEST_REVIEW_COMMAND));
 }
 
@@ -447,7 +437,7 @@ fn no_folder_search_in_any_skill() {
 }
 
 #[test]
-fn project_instructions() {
+fn project_instructions_name_mktemp_and_the_knowledge_base_but_no_scratch_folder() {
     let text = read("CLAUDE.md");
     assert!(text.contains("mktemp"));
     assert!(text.contains("knowledge-base"));
@@ -457,7 +447,7 @@ fn project_instructions() {
 }
 
 #[test]
-fn template_bounds() {
+fn the_review_issue_format_block_is_one_fenced_markdown_block() {
     for file in [
         "plugin/skills/deep-review/SKILL.md",
         "plugin/skills/merge-review/CONVERTER.md",

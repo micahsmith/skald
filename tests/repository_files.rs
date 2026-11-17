@@ -1,10 +1,7 @@
-use serde_json::Value;
+mod common;
 
-fn read(path: &str) -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()))
-}
+use common::read;
+use serde_json::Value;
 
 fn read_json(path: &str) -> Value {
     serde_json::from_str(&read(path)).unwrap()

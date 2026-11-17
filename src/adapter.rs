@@ -187,12 +187,16 @@ pub fn plugin(plugins_dir: &Path) -> Plugin {
         }
         Err(message) => return Plugin::unidentified(PluginStatus::Unknown, message),
     };
-    let manifest = installed.install_path.as_deref().and_then(read_manifest);
-    let min = manifest.as_ref().and_then(min_skald_version);
-    let undeclared_minimum = manifest.is_some() && min.is_none();
-    let (status, detail) = match &min {
-        Some(min) => plugin_status(&installed.id, min, &program_version()),
-        None => (
+    let manifest = match installed.install_path.as_deref() {
+        Some(path) => read_manifest(path),
+        None => Err(format!("{} records no install path", installed.id)),
+    };
+    let min = manifest.as_ref().ok().and_then(min_skald_version);
+    let undeclared_minimum = manifest.is_ok() && min.is_none();
+    let (status, detail) = match (&min, manifest) {
+        (Some(min), _) => plugin_status(&installed.id, min, &program_version()),
+        (None, Err(message)) => (PluginStatus::Unknown, Some(message)),
+        (None, Ok(_)) => (
             PluginStatus::Unknown,
             Some(format!(
                 "{} declares no minimum skald version",
@@ -209,9 +213,11 @@ pub fn plugin(plugins_dir: &Path) -> Plugin {
     }
 }
 
-fn read_manifest(install_path: &Path) -> Option<Value> {
-    let text = std::fs::read_to_string(install_path.join(".claude-plugin/plugin.json")).ok()?;
-    serde_json::from_str(&text).ok()
+fn read_manifest(install_path: &Path) -> Result<Value, String> {
+    let path = install_path.join(".claude-plugin/plugin.json");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    serde_json::from_str(&text).map_err(|err| format!("cannot parse {}: {err}", path.display()))
 }
 
 fn min_skald_version(manifest: &Value) -> Option<String> {

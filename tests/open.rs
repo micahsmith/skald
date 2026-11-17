@@ -173,6 +173,43 @@ fn freeform_resubmission_is_versioned() {
 }
 
 #[test]
+fn freeform_resubmission_of_truncated_text_is_rejected() {
+    let sandbox = Sandbox::new();
+    let repo = sandbox.repo_with_origin(ORIGIN);
+    let id = submit_id(&sandbox, &repo, "freeform", "sketch", &sketch());
+
+    let shown = sandbox.json(&repo, &["design", "get", &id])["html"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let file = sandbox.file("shown.html", &format!("{shown}\n"));
+    let (code, error) = sandbox.json_with_code(
+        &repo,
+        &[
+            "design",
+            "submit",
+            "--kind",
+            "freeform",
+            "--name",
+            "sketch",
+            "--file",
+            file.to_str().unwrap(),
+        ],
+    );
+    assert_ne!(code, 0);
+    assert_eq!(error["problems"][0]["code"], "truncated-text");
+    assert!(
+        error["problems"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("skald design get {id} --full"))
+    );
+
+    let newest = sandbox.json(&repo, &["design", "get", &id]);
+    assert_eq!(newest["design"]["version"], 1);
+}
+
+#[test]
 fn freeform_page_is_served_unchanged() {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_with_origin(ORIGIN);

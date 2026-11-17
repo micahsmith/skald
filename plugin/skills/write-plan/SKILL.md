@@ -82,11 +82,11 @@ emit the completion report.
 
 1. **Worktree.** Do all work in a git worktree (if worktrees are available) named after this plan
    file.
-2. **Sequential Slices in Order.** Follow the ordering for slices. Start a slice ONLY after every
-   slice that blocks it has passed verification. Independent slices MAY run in parallel ONLY if
+2. **Sequential Slices in Order.** Follow the ordering for slices. Start a slice only after every
+   slice that blocks it has passed verification. Independent slices MAY run in parallel only if
    each runs in its own worktree. Independent worktrees MUST be merged back into the main worktree
    once complete.
-3. **Delegate Slices to Subagents.** Each subagent MUST receive ONLY this execution protocol and
+3. **Delegate Slices to Subagents.** Each subagent MUST receive only this execution protocol and
    details on the slice it is implementing (the plan file path and the slice title). Keep context
    windows small.
 4. **TDD.** Use red/green/refactor. Demonstrate failure of the test first, write the minimum
@@ -129,7 +129,7 @@ allows loops to detect completion:
 ```markdown
 ## Completion Report
 
-Print this ONLY when all slice checkpoints are verified:
+Print this only when all slice checkpoints are verified:
 
 - One line per slice: its title, ✅, and the checkpoint proof.
 - The full test suite command and its output.
