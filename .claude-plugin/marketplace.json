@@ -13,7 +13,7 @@
         "name": "micah smith"
       },
       "category": "development",
-      "source": "./",
+      "source": "./plugin",
       "homepage": "https://github.com/micahsmith/skald"
     }
   ]

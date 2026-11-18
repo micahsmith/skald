@@ -1,0 +1,23 @@
+[package]
+name = "skald"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Records, versions, and renders design intent for a repository."
+license = "MIT"
+repository = "https://github.com/micahsmith/skald"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+rand = "0.10"
+rusqlite = { version = "0.40", features = ["bundled"] }
+semver = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tiny_http = "0.12"
+toon-format = { version = "0.7", default-features = false }
+
+[dev-dependencies]
+assert_cmd = "2.2"
+scraper = "0.29"
+tempfile = "3.27"

@@ -1,0 +1,29 @@
+{
+  "description": "Add the writing style guides for every session and subagent, and the knowledge base summary for every session.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/emit-guides.sh\" session"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/knowledge-base.sh\""
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/emit-guides.sh\" subagent"
+          }
+        ]
+      }
+    ]
+  }
+}

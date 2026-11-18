@@ -1,0 +1,11 @@
+{
+  "name": "code-skillset",
+  "description": "custom library of skills and hooks for writing code",
+  "author": {
+    "name": "micah smith"
+  },
+  "homepage": "https://github.com/micahsmith/skald",
+  "metadata": {
+    "skaldMinVersion": "0.1.0"
+  }
+}
