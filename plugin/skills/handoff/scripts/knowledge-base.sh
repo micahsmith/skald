@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The bracket ranges in toon_string must match ASCII letters only, whatever the user's locale.
+# The bracket ranges in toon_string_to must match ASCII letters only, whatever the user's locale.
 export LC_ALL=C
 
 FOLDERS=(. .claude .agents .codex .cursor .gemini .kiro .goose .windsurf .opencode scratch tmp temp)
@@ -24,8 +24,6 @@ resolve() {
   fi
 }
 
-# Prints the resolved path of the first .skald folder under $1 that is not the skald data
-# directory, or fails when none exists.
 search() {
   local base="$1" folder candidate
   for folder in "${FOLDERS[@]}"; do
@@ -43,8 +41,7 @@ search() {
   return 1
 }
 
-# Prints the resolved root of the main checkout, or fails when the repository has none. git lists
-# the main checkout first, and marks it bare when there is none.
+# git lists the main checkout first, and marks it bare when there is none.
 main_checkout() {
   local records line path="" top
   records="$(git worktree list --porcelain 2>/dev/null)" || return 1
@@ -62,8 +59,8 @@ main_checkout() {
   (cd "$top" && pwd -P)
 }
 
-# Succeeds when $1 holds a character that a shell expands or that ends a quoted string: $, a
-# backtick, ", \, or a control character. The agent pastes printed paths into shell commands.
+# Succeeds when $1 holds a character that a shell expands or that ends a quoted string. The agent
+# pastes printed paths into shell commands.
 has_unsafe() {
   case "$1" in
     *[[:cntrl:]]* | *[\$\`\"\\]*) return 0 ;;
@@ -77,7 +74,6 @@ trim() {
   printf '%s' "${value%"${value##*[![:blank:]]}"}"
 }
 
-# Prints the first problem in config file $1, or nothing.
 config_error() {
   local line number=0 key value cr=$'\r'
   while IFS= read -r line || [ -n "$line" ]; do
@@ -159,7 +155,6 @@ within() {
   return 1
 }
 
-# Sets dir, exists, mode, ignored, and error from the files on disk.
 inspect() {
   if dir="$(search "$root")" || { [ "$main" != "$root" ] && dir="$(search "$main")"; }; then
     exists=true
@@ -249,9 +244,8 @@ init() {
   inspect
 }
 
-# Prints "<seconds><tab><date><tab><name>" for each folder in work folder $1, newest first. The
-# date is the local date of <seconds>. GNU stat prints three words for %y (date, time, zone), so
-# the name follows four words there and two words on BSD.
+# stat prints dates in local time. GNU stat prints three words for %y (date, time, zone), so the
+# name follows four words there and two words on BSD.
 folder_times() {
   local work="$1" format words nl=$'\n'
   if stat -c %Y / >/dev/null 2>&1; then

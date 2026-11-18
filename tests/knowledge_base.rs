@@ -20,7 +20,6 @@ struct Run {
     output: Value,
 }
 
-/// The script under `/bin/bash` in `dir`, with the sandbox environment.
 fn script(sandbox: &Sandbox, dir: &Path) -> Command {
     let mut cmd = sandbox.command("/bin/bash", dir);
     cmd.arg(SCRIPT);
@@ -62,7 +61,6 @@ fn run_ok(cmd: &mut Command) -> Run {
     run
 }
 
-/// Runs the default command in `dir`, asserts exit 0, and returns the run.
 fn default_run(sandbox: &Sandbox, dir: &Path) -> Run {
     run_ok(&mut script(sandbox, dir))
 }
@@ -71,7 +69,6 @@ fn knowledge_base(sandbox: &Sandbox, dir: &Path) -> Value {
     default_run(sandbox, dir).output
 }
 
-/// The keys of the `knowledge_base` object, in the order stdout lists them.
 fn raw_keys(stdout: &str) -> Vec<&str> {
     stdout
         .lines()
@@ -93,8 +90,6 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-/// Every path under the sandbox root except `.git/` folders. A file maps to its bytes, a symbolic
-/// link to its target, and a folder to `None`.
 fn snapshot(sandbox: &Sandbox) -> BTreeMap<PathBuf, Option<Vec<u8>>> {
     let mut entries = BTreeMap::new();
     let mut pending = vec![sandbox.root.clone()];
@@ -222,8 +217,6 @@ fn a_symbolic_link_to_the_repository_resolves_to_the_real_path() {
     assert_eq!(output["dir"], skald_dir(&repo));
 }
 
-/// Asserts that every command reports `fragment` as the error, prints no part of `secret`, and
-/// leaves the sandbox untouched.
 fn assert_blocked_without_writing(sandbox: &Sandbox, repo: &Path, fragment: &str, secret: &str) {
     let before = snapshot(sandbox);
     for command in [None, Some("init"), Some("index")] {
@@ -435,8 +428,6 @@ fn newline_in_path_cannot_forge_lines() {
     assert_eq!(run.stdout.lines().count(), 5, "stdout:\n{}", run.stdout);
 }
 
-/// Asserts that the run reports the unsafe-path error and prints no part of the path, which
-/// contains `fragment`.
 fn assert_refused(run: &Run, fragment: &str) {
     assert_eq!(run.output["dir"], "", "stdout:\n{}", run.stdout);
     assert!(
@@ -703,7 +694,6 @@ fn a_folder_is_valid_when_the_data_directory_is_elsewhere() {
     assert!(output.get("error").is_none(), "output: {output:#}");
 }
 
-/// Runs the default command in a repository whose `.skald/config.toon` holds `config`.
 fn with_config(config: &str) -> Run {
     let sandbox = Sandbox::new();
     let repo = sandbox.repo_without_origin();
@@ -1016,7 +1006,6 @@ fn index_ok(sandbox: &Sandbox, dir: &Path) -> Run {
     run_ok(script(sandbox, dir).arg("index"))
 }
 
-/// A repository after `init`, and its `.skald/work` folder.
 fn initialized(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
     let repo = sandbox.repo_without_origin();
     init_ok(sandbox, &repo);
@@ -1024,13 +1013,11 @@ fn initialized(sandbox: &Sandbox) -> (PathBuf, PathBuf) {
     (repo, work)
 }
 
-/// The decoded `work/index.toon` of `repo`.
 fn index_file(repo: &Path) -> Value {
     let text = read(&repo.join(".skald/work/index.toon"));
     toon_format::decode_default(&text).unwrap_or_else(|err| panic!("{err} in:\n{text}"))
 }
 
-/// The `name` of each row of the index, in order.
 fn names(index: &Value) -> Vec<&str> {
     index["work"]
         .as_array()
@@ -1058,7 +1045,6 @@ fn touch(sandbox: &Sandbox, path: &Path, stamp: &str) {
     assert!(status.success(), "touch -t {stamp} {}", path.display());
 }
 
-/// Writes `path` and sets its time to `stamp`.
 fn write_at(sandbox: &Sandbox, path: &Path, stamp: &str) {
     write(path, "notes\n");
     touch(sandbox, path, stamp);
