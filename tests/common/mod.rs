@@ -201,7 +201,6 @@ impl Sandbox {
         (output.status.code().unwrap(), value)
     }
 
-    /// Runs `script` with `bash -c` in `dir`.
     pub fn bash(&self, dir: &Path, script: &str) -> Output {
         self.command("bash", dir)
             .args(["-c", script])
@@ -227,7 +226,6 @@ impl Sandbox {
         String::from_utf8(output.stdout).unwrap().trim().to_owned()
     }
 
-    /// Creates a repository on branch `main` with one commit and no remote.
     pub fn repo_without_origin(&self) -> PathBuf {
         let number = self.repos.get() + 1;
         self.repos.set(number);
@@ -244,7 +242,6 @@ impl Sandbox {
         repo
     }
 
-    /// Adds a worktree of `repo` on a new branch and returns its path.
     pub fn worktree(&self, repo: &Path, branch: &str) -> PathBuf {
         let path = self.root.join("worktrees").join(branch);
         self.git(

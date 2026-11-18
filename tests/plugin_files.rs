@@ -29,7 +29,6 @@ or edit any file under `work/`, run `bash scripts/knowledge-base.sh index`.";
 
 const END_MARKER: &str = "<!-- end shared -->";
 
-/// The command of every hook that `plugin/hooks/hooks.json` registers for `event`.
 fn hook_commands(event: &str) -> Vec<String> {
     let config: Value = serde_json::from_str(&read("plugin/hooks/hooks.json")).unwrap();
     config["hooks"][event]
@@ -185,8 +184,7 @@ fn markdown_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Every way in which the shared blocks or the script copies under `plugin` are out of sync. Each
-/// problem names the files, paths, or block involved.
+/// Each problem names the files, paths, or block involved.
 fn sync_problems(plugin: &Path) -> Vec<String> {
     let mut problems = Vec::new();
     let mut found: BTreeMap<String, Vec<(String, Option<String>)>> = BTreeMap::new();
@@ -264,7 +262,6 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-/// The problems in a copy of `plugin/` after `change` edits the copy.
 fn problems_after(change: impl FnOnce(&Path)) -> Vec<String> {
     let sandbox = Sandbox::new();
     let plugin = sandbox.root.join("plugin");
