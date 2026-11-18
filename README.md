@@ -36,16 +36,30 @@ order:
    be restarted.
 ```
 
-### Plain Skills
+### Legacy Skills
 
-The [`plain-skills`](https://github.com/micahsmith/skald/tree/plain-skills) branch keeps the plugin
-as it was before skald, at commit `df47242`. Its skills save documents to their own folders instead
-of the `.skald/` knowledge base. To install it, give your agent the install prompt in the
-[`plain-skills` README](https://github.com/micahsmith/skald/blob/plain-skills/README.md#installation).
+To install the legacy skills from the `legacy-skills` branch, give the prompt below to your agent.
 
-Both versions register the `skald` marketplace, so only one version can be installed at a time.
-Each install prompt replaces the other version. However, `skald setup` treats the plain version as
-installed and leaves it in place. To switch from the plain version, run the prompt above.
+```text
+Install the `code-skillset` plugin from the `legacy-skills` branch of
+https://github.com/micahsmith/skald. Follow these steps in order:
+
+1. Fetch the latest commit of the `legacy-skills` branch over HTTPS. Assume you do not have access
+   to SSH.
+2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or
+   `cc-loadout` marketplace entry. Leave everything else in place.
+3. Install at the user level, using the native install mechanism of the agent you are running in:
+   - If the agent supports Claude Code plugin marketplaces, add
+     `https://github.com/micahsmith/skald.git#legacy-skills` as the `skald` marketplace. Then install
+     `code-skillset@skald`. This step also installs the hooks.
+   - Otherwise, install each directory under `skills/` as a skill. Keep each directory name and its
+     contents unchanged. Then register the hooks in `hooks/` with the agent's equivalent of a
+     session-start hook. If the agent has no equivalent, skip the hooks. Ask for confirmation before
+     editing any global instruction file.
+4. Confirm that every skill under `skills/` is installed.
+5. Report the install location, what was installed, what was skipped, and whether the agent needs to
+   be restarted.
+```
 
 ## Hooks
 
