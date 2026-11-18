@@ -36,6 +36,17 @@ order:
    be restarted.
 ```
 
+### Plain Skills
+
+The [`plain-skills`](https://github.com/micahsmith/skald/tree/plain-skills) branch keeps the plugin
+as it was before skald, at commit `df47242`. Its skills save documents to their own folders instead
+of the `.skald/` knowledge base. To install it, give your agent the install prompt in the
+[`plain-skills` README](https://github.com/micahsmith/skald/blob/plain-skills/README.md#installation).
+
+Both versions register the `skald` marketplace, so only one version can be installed at a time.
+Each install prompt replaces the other version. However, `skald setup` treats the plain version as
+installed and leaves it in place. To switch from the plain version, run the prompt above.
+
 ## Hooks
 
 The guides hook adds these guides to the context at the start of every session and every subagent.
