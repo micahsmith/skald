@@ -2,10 +2,16 @@
 
 Skills and hooks library for Claude Code and other agents.
 
+The `experiment/skald-tool` branch holds `skald`, an experimental command-line program. The README
+on that branch explains how to install it.
+
 ## Installation
 
 Give the prompt below to your agent. Use the same prompt to install, update, or reinstall. Each run
 replaces any earlier copy, so every run ends in the same state.
+
+An earlier version of this README installed the skills from the `legacy-skills` branch. Updates now
+land on `main`, so run the prompt again to switch to `main`.
 
 ```text
 Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
