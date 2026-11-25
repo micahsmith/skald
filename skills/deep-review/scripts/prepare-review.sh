@@ -4,7 +4,8 @@ set -euo pipefail
 # Usage: prepare-review.sh [--no-fetch] [TARGET] [BASE]
 #   TARGET     Branch/ref under review. Defaults to the current branch (HEAD).
 #   BASE       Branch/ref to compare against. Defaults to the first existing
-#              of: main, master (local, then origin/*).
+#              of: main, master (local, then origin/*). The skill passes the
+#              base branch from project guidance when the user names none.
 #   --no-fetch Skip update of remote-tracking refs. The script by default will
 #              fetch first to ensure freshness.
 #
@@ -57,6 +58,17 @@ TARGET_SHA="$(git rev-parse "$TARGET")"
 HEAD_SHA="$(git rev-parse HEAD)"
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
+# Local branches whose tips TARGET contains and BASE lacks, nearest first. When TARGET is
+# stacked on another branch, that branch is listed first, and a review against BASE also
+# covers its changes.
+STACK_PARENTS="$(
+  git for-each-ref --format='%(refname:short)' --merged="$TARGET" --no-merged="$BASE" refs/heads |
+    while IFS= read -r b; do
+      [ "$(git rev-parse "$b")" = "$TARGET_SHA" ] && continue
+      printf '%s %s\n' "$(git rev-list --count "$b..$TARGET")" "$b"
+    done | sort -n | awk '{print $2}' | paste -s -d ' ' -
+)"
+
 # Review in place only when the checked-out commit is the target and the
 # working tree is clean. Otherwise isolate in a detached worktree so the
 # current branch and tree are not affected.
@@ -79,6 +91,7 @@ echo "TARGET=$TARGET"
 echo "MERGE_BASE=$MERGE_BASE"
 echo "TARGET_SHA=$TARGET_SHA"
 echo "CURRENT_BRANCH=$CURRENT_BRANCH"
+[ -n "$STACK_PARENTS" ] && echo "STACK_PARENTS=$STACK_PARENTS"
 [ -n "$CLEANUP" ] && echo "CLEANUP=$CLEANUP"
 echo "DIFF_CMD=git -C \"$WORKDIR\" diff $MERGE_BASE $TARGET_SHA"
 echo "=== diffstat ==="

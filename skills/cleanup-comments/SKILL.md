@@ -18,6 +18,10 @@ different scope, use the stated scope. For example, the user may request to exam
 compared to the base branch. Branches, directories, single files, or the whole repository might be
 requested.
 
+If the user asks for the branch scope without naming a base, compare against the base branch that
+the project guidance in your context names. If the guidance names none, use `main`, else `master`.
+State the base you used in your report.
+
 Do NOT edit comments outside of the provided scope. Report them to the user and ONLY edit if the
 user first confirms the edit is allowed.
 
