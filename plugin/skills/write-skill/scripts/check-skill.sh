@@ -42,7 +42,7 @@ v() { echo "$1: $2"; fail=1; }
 for dir in "$@"; do
   dir="${dir%/}"
   [ -d "$dir" ] || {
-    echo "ERROR: '$dir' is not a directory. Pass a skill directory, such as skills/write-skill." >&2
+    echo "ERROR: '$dir' is not a directory. Pass a skill directory, such as plugin/skills/write-skill." >&2
     exit 2; }
   skill="$dir/SKILL.md"
   [ -f "$skill" ] || { v "$dir" "no SKILL.md"; continue; }
