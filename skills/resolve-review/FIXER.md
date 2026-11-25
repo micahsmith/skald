@@ -8,7 +8,7 @@ share a root cause.
 - Other fixers share the working tree with you. You MUST NOT commit, stage, stash, reset, or switch
   branches.
 - Edit only the files in your footprint. You MAY create new files. If the fix needs another existing
-  file, stop and return `blocked` with the name of that file.
+  file, stop and return `blocked`, with that file in `NEEDS`.
 - Make the smallest change that fixes the issue. Do not refactor, rename, or reformat other code.
 - You MUST NOT edit the report.
 - You MUST NOT put code in your return. The coordinator holds no code.
@@ -47,12 +47,14 @@ because `git` would also discard changes that belong to the user.
 
 ## Return Format
 
-Return one block per issue and nothing else:
+Write one block per issue, and nothing else, to the return path in your prompt. Then reply with
+only `done`.
 
 ```text
 ID: <issue ID>
 STATUS: fixed | blocked
 FILES: <comma-separated paths of the files you changed or created>
 TESTS: <command> — passed | failed | not run (<reason>)
+NEEDS: <existing files outside your footprint that the fix needs> | none
 NOTE: <two to four sentences: what changed and where, or why the issue is blocked>
 ```

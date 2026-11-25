@@ -12,7 +12,9 @@ statuses.
 
 - You MUST NOT read source code, so that your context stays small. You MAY read the report, `git`
   status output, and test output.
-- You alone edit the report.
+- You alone edit the report, and only with `scripts/triage.sh`. Run the script; do not read it.
+- Record each change in the report as soon as it happens, so that a fresh session can resume from
+  the report alone.
 - All fixes land in the shared working tree. You MUST NOT commit, stage, stash, or switch branches.
   The user handles commits.
 - Run at most 4 subagents (validators or fixers) at once.
@@ -80,20 +82,31 @@ Check the working tree before any work starts:
 
 ### 2. Build or Resume the Triage Table
 
-If the report has no triage table, add one (see "Tracking"). Give every issue the status `open`.
+Run the script:
 
-If the report has a triage table, resume from it. Handle each row by its status:
+```sh
+bash scripts/triage.sh ingest <report-path>
+bash scripts/triage.sh load <report-path>
+```
+
+`ingest` records any return file that an earlier session left. `load` adds the triage table if the
+report has none, with every issue `open`. It prints the returns directory as `RETURNS=<path>`, then
+each row that is not `fixed`, `rejected`, or `skipped`. Handle each row by its status:
 
 | Status | Action |
 | --- | --- |
-| `fixed`, `rejected`, `skipped` | Skip the row. |
 | `open` | Validate the issue in step 3. |
-| `queued` | Fix the issue in step 5. |
-| `awaiting-decision`, `unclear`, `blocked` | Include the issue in the decision batch in step 6. |
+| `queued` | Fix the issue in step 4. |
+| `awaiting-decision`, `unclear`, `blocked` | Include the issue in the decision batch in step 5. |
 | `in-progress` | The row is stale, because no fixer survives a session. See below. |
 
 For each stale `in-progress` row, run `git status --porcelain -- <files>` on the files in the row.
-Then set the status to `queued`. If any file has changes, add "partial fix may exist" to the note.
+Then set the status to `queued`. If any file has changes, add "partial fix may exist" to the note,
+after the existing note:
+
+```sh
+bash scripts/triage.sh set <report-path> <ID> status=queued note="<note>; partial fix may exist"
+```
 
 ### 3. Validate
 
@@ -106,17 +119,19 @@ model (such as Haiku) when the harness can choose one. It reports:
 - Whether several test runs can happen at once in one working tree. Shared databases, fixed ports,
   and shared build directories prevent this.
 
-Then spawn one validator per `open` issue. Give each validator:
+Then validate the `open` issues in batches of at most 4. Start the validators of a batch together,
+and wait until every one has returned. Give each validator:
 
 - The absolute path to [VALIDATOR.md](VALIDATOR.md), which the validator MUST read first.
 - The report path and the ID of its issue.
+- Its return path, `<RETURNS>/<ID>.txt`.
 - The issue list from step 1, so that the validator can name issues that share a root cause.
 - The test commands. If test runs cannot happen at once, tell the validator to run no tests.
 
-Record each verdict, judgment, risk, and footprint in the triage table as the validator returns. The
-footprint is the list of files the fix touches. Then add a validation block to the issue (see
-"Tracking"). The validation block is the only place in the report that holds the validator's
-evidence.
+After each batch, run `bash scripts/triage.sh ingest <report-path>`. It records each verdict,
+judgment, risk, footprint, and status, and it writes each validation block. It prints one line per
+issue. If it prints an `ERROR` for a file, it keeps that file. Run that validator once more, then
+run `ingest` again. If the second return also fails, report the error to the user.
 
 A validator MAY write a temporary test when reading the code cannot settle an issue. Every temporary
 test has `rrtmp` in its file name, and the validator deletes it before returning. A validator that
@@ -127,60 +142,38 @@ even when no issue was `open`. Delete each file listed:
 git ls-files --others --exclude-standard | grep rrtmp
 ```
 
-### 4. Apply the Dispatch Policy
-
-Set the status of each validated issue from this table:
-
-| Verdict | Judgment | Risk | Action | Status |
-| --- | --- | --- | --- | --- |
-| `confirmed`, `confirmed-alt` | `mechanical` | `low`, `medium` | Fix without asking. | `queued` |
-| `confirmed`, `confirmed-alt` | `mechanical` | `high` | The user approves in bulk. | `awaiting-decision` |
-| `confirmed`, `confirmed-alt` | `choice` | any | The user picks an option. | `awaiting-decision` |
-| `confirmed`, `confirmed-alt` | `design` | any | Discuss with the user, last. | `awaiting-decision` |
-| `rejected` | — | — | Surface the issue. Do not fix it. | `rejected` |
-| `unclear` | — | — | Surface the issue. Do not fix it. | `unclear` |
-
-For a `confirmed-alt` issue, the fixer applies the validator's fix instead of the proposed solution.
-Record the validator's fix in the note.
-
-The user MAY override a `rejected` or `unclear` verdict. An overridden issue becomes `queued`.
-
-### 5. Fix in Waves
+### 4. Fix in Waves
 
 Start the first wave as soon as validation ends. Do not wait for the user.
 
-Plan each wave as follows:
+Plan each wave with `bash scripts/triage.sh wave <report-path>`. It groups the queued issues that
+share a root cause into units. It picks at most 4 units whose footprints share no file, and it sets
+their issues to `in-progress`. For each unit, it prints the IDs, the footprint, the notes, and the
+return path.
 
-1. **Group.** Issues that share a root cause form one unit of work, and one fixer takes the whole
-   unit. Every other issue is its own unit. The footprint of a unit is the union of its footprints.
-2. **Separate.** Two units conflict when their footprints share a file. Units that conflict MUST run
-   in different waves.
-3. **Fill.** Put at most 4 units that do not conflict into the wave. The other units wait.
-
-Set each issue to `in-progress` before its fixer starts. Each fixer SHOULD run on a mid-size model
-(such as Sonnet) when the harness can choose one. Give each fixer:
+Start the fixers of a wave together, one per unit, and wait until every one has returned. Each
+fixer SHOULD run on a mid-size model (such as Sonnet) when the harness can choose one. Give each
+fixer:
 
 - The absolute path to [FIXER.md](FIXER.md), which the fixer MUST read first.
-- The report path and the IDs in its unit.
-- The fix to apply to each issue: the proposed solution, the validator's fix, or the option the user
-  chose.
-- The footprint of the unit, plus the "partial fix may exist" note if the row has one.
+- The report path, and the unit's IDs, footprint, notes, and return path, as `wave` printed them.
+- The fix to apply to each issue: the validator's fix when the note says so, the option the user
+  chose when the note names one, and the proposed solution otherwise.
 - The test commands. If test runs cannot happen at once, tell the fixer to run no tests.
 
-Update the triage table as each fixer returns, and add a resolution block to each issue that becomes
-`fixed` or `blocked` (see "Tracking"). Handle a `blocked` return by its cause:
+After each wave, run `ingest`. It sets each issue to `fixed`, `queued`, or `blocked`, and it writes
+each resolution block. Handle each issue that is not `fixed` as follows:
 
-- **The fix needs a file outside the footprint.** Add the file to the footprint. Set the issue to
-  `queued` for a later wave. The next fixer is a fresh attempt, not a retry, so it runs on the
-  mid-size model.
-- **Any other cause.** Keep the status `in-progress`, and retry the unit once on the session default
-  model. Include the first fixer's `NOTE` in the retry prompt. Write the resolution block only after
-  the retry returns. If the retry also returns `blocked`, set the status to `blocked`, and include
-  the issue in the decision batch.
+- **`queued`.** The fix needs a file outside the footprint, and `ingest` added the file to the
+  footprint. A later wave gives the unit to a fresh fixer on the mid-size model.
+- **`blocked`.** Retry the unit once on the session default model. Set each issue in the unit to
+  `in-progress` with `set`. Include the note that `ingest` printed in the retry prompt, and give the
+  retry the same return path. Wait for the retries, then run `ingest` before the next wave. If a
+  retry also returns `blocked`, include the issue in the decision batch.
 
-Run waves until no `queued` issue remains.
+Run waves until `wave` prints `No queued issues.`
 
-### 6. Ask the User in One Batch
+### 5. Ask the User in One Batch
 
 Present every open decision in one message while the first wave runs. If your subagents block the
 conversation, present the batch right after the first wave returns.
@@ -203,119 +196,42 @@ The batch has three parts. Omit any empty part.
    Letter only options that exclude each other. Never letter steps that must all happen. Each option
    states the fix and its trade-off.
 3. **Not Fixed.** Every `rejected`, `unclear`, and `blocked` issue, each with its reason. The user
-   MAY override any of them.
+   MAY override any of them. An overridden issue becomes `queued`.
 
-Apply the answers. An approved or decided issue becomes `queued`, with the decision in its note. A
-declined issue becomes `skipped`. Fix the new `queued` issues in further waves.
+Apply each answer with `set`. An approved or decided issue becomes `queued`, with the decision in
+its note. A declined issue becomes `skipped`, with the user's reason. Keep each note to one or two
+sentences, and do not repeat the validation block:
+
+```sh
+bash scripts/triage.sh set <report-path> LOG-2 status=queued note="User chose A."
+bash scripts/triage.sh set <report-path> SEC-1 status=skipped reason="The user accepts the risk."
+```
+
+Fix the new `queued` issues in further waves.
 
 Discuss the `design` issues last, one at a time. Each discussion ends with a decision (`queued`) or
 with `skipped`.
 
-### 7. Verify
+### 6. Verify
 
 After the last wave, run the full test suite yourself.
 
 Attribute each failure to an issue by footprint: match the failing file or test to the files each
-fixer touched. Send the failure back to one fixer for that issue, on the session default model. If
-the second attempt also fails, set the issue to `blocked`. A failure that matches no footprint may
-predate the fixes. Report it to the user and leave it alone.
+fixer touched, which the triage table lists. Send the failure back to one fixer for that issue, on
+the session default model. Set the issue to `in-progress` first, give the fixer the issue's return
+path, and run `ingest` when it returns. If the suite fails again, set the issue to `blocked`, with
+the failing test as the reason. A failure that matches no footprint may predate the fixes. Report it
+to the user and leave it alone.
 
 If the project has no tests, state that in the final summary.
 
-### 8. Report
+### 7. Report
 
-Give the user a short summary:
+Run `bash scripts/triage.sh load <report-path>` for the final rows. Give the user a short summary:
 
 - The count of issues per status.
 - Every issue that is still `blocked`, `unclear`, or `awaiting-decision`, with its reason.
 - The result of the full test suite.
 - The report path, and a reminder that no change is committed.
 
-## Tracking
-
-The report is the only record of progress. A fresh session MUST be able to resume from the report
-alone. Update the report at every status change. Do not batch the updates.
-
-### Triage Table
-
-Add the table as its own section directly after the Summary section of the report:
-
-```markdown
-## Triage
-
-| ID | Title | Verdict | Judgment | Risk | Status | Files Touched | Note |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| SEC-1 | Query built from raw input | confirmed | mechanical | low | fixed | `db/users.js`, `test/users.test.js` | Regression test added. |
-| LOG-2, PERF-1 | Cache never expires | confirmed | choice | medium | awaiting-decision | `cache/store.js` | Options: TTL or LRU. |
-| STY-3 | Unused import | — | — | — | open | — | — |
-```
-
-- **Files Touched** holds the footprint until the fixer returns. Then the column holds the files
-  that the fixer changed.
-- **Note** holds what a fresh session needs to continue: the root-cause group, the validator's fix,
-  the chosen option, or the reason for a block. Keep each note to one or two sentences. The
-  validation block holds the decisive evidence, so the note MUST NOT repeat it.
-
-### Validation Block
-
-Add a validation block to an issue as soon as its validator returns. Write the block after the last
-part of the issue: after the last `- **Also reported:**` bullet when present (`merge-review` adds
-these), otherwise after **Confidence Note** when present, otherwise after **Proposed Solution**.
-
-The top bullet holds only the verdict. Sub-bullets hold the rest, each with a fixed label, in this
-order:
-
-| Sub-bullet | Present when | Content |
-| --- | --- | --- |
-| `Evidence` | Always | The validator's `REASON`, cut to one or two sentences that name the guard, caller, or test that decided the verdict. |
-| `Fix` | Verdict is `confirmed-alt` | The validator's `FIX`: the fix to apply, and the fate of the proposed solution. |
-| `Options` | Judgment is `choice` | The validator's `OPTIONS`: lettered fixes that exclude each other, each with its trade-off. An option that is the proposed solution says so. |
-| `Recommend` | Judgment is `choice` | The validator's `RECOMMEND`: the letter and one reason. |
-
-```markdown
-- **Validation:** rejected
-  - Evidence: the guard at `api/users.js:42` returns early when `id` is empty, and a temporary test
-    with an empty ID returned 400.
-```
-
-```markdown
-- **Validation:** confirmed-alt
-  - Evidence: `cache/store.js:30` adds entries and nothing removes them.
-  - Fix: expire entries in `cache/store.js`. The proposed solution (clear on restart) is dropped,
-    because the process runs for weeks.
-  - Options: (A) TTL per entry; simple, but stale entries live until the TTL ends. (B) LRU cap;
-    bounded memory, but hot entries can be evicted under load.
-  - Recommend: A, because every caller already passes a timestamp.
-```
-
-When the validator replaces or extends the proposed solution, the `Fix` or `Options` sub-bullet MUST
-state what became of the proposed solution. Either the proposal is one of the options, or the
-sub-bullet names the reason it was dropped. You MUST NOT edit or remove the **Proposed Solution**
-field itself.
-
-Cut the validator's narrative. Keep the names of the files, lines, and tests that the summary cites,
-so that a reader can check the verdict.
-
-### Resolution Block
-
-Add a resolution block to an issue when its status becomes `fixed`, `rejected`, `unclear`,
-`blocked`, or `skipped`. Write the block directly after the validation block of the issue, or in its
-place if the issue has none. The top bullet holds only the status. Sub-bullets hold the detail for
-that status:
-
-| Status | Sub-bullets |
-| --- | --- |
-| `fixed` | `Changed` (the fixer's `FILES`), `Tests` (`TESTS`), `Note` (`NOTE`). |
-| `blocked` | `Reason` (the fixer's `NOTE`), then `Tests` if any ran. |
-| `skipped` | `Reason`: the reason the user gave. |
-| `rejected`, `unclear` | None. The validation block holds the evidence. |
-
-```markdown
-- **Resolution:** fixed
-  - Changed: `cache/store.js`, `test/store.test.js`.
-  - Tests: `npm test -- test/store.test.js` passed.
-  - Note: entries now expire after a TTL; regression test added.
-```
-
-You MAY rewrite the fixer's text for clarity. You MUST keep every file, test command, and result.
-Replace the block if the status changes later.
+Then delete the returns directory if it is empty: `rmdir <RETURNS>`.

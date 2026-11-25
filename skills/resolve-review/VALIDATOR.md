@@ -7,8 +7,9 @@ the claim.
 
 ## Rules
 
-- You MUST leave the working tree exactly as you found it. You MUST NOT edit any existing file. The
-  one file you MAY create is a temporary test (see "Temporary Test").
+- You MUST leave the working tree exactly as you found it, apart from your return file. You
+  MUST NOT edit any existing file. The other file you MAY create is a temporary test (see
+  "Temporary Test").
 - You MUST NOT put code in your return, because the coordinator holds no code. Name the evidence
   instead: the file and line of each guard, caller, or check, the name of each test, and the result
   of each run.
@@ -110,9 +111,10 @@ footprints share no file, so a missing file causes a collision. When in doubt, i
 
 ## Return Format
 
-Return this block and nothing else. Omit `JUDGMENT`, `RISK`, and `FOOTPRINT` when the verdict is
-`rejected` or `unclear`. Include `FIX` only when the verdict is `confirmed-alt`. Include `OPTIONS`
-and `RECOMMEND` only when the judgment is `choice`.
+Write this block, and nothing else, to the return path in your prompt. Then reply with only
+`done`. Omit `JUDGMENT`, `RISK`, and `FOOTPRINT` when the verdict is `rejected` or `unclear`.
+Include `FIX` only when the verdict is `confirmed-alt`. Include `OPTIONS` and `RECOMMEND` only when
+the judgment is `choice`.
 
 ```text
 ID: <issue ID>
@@ -121,7 +123,7 @@ JUDGMENT: mechanical | choice | design
 RISK: low | medium | high
 FOOTPRINT: <comma-separated file paths>
 GROUP: <IDs of issues with the same root cause> | none
-REASON: <two to three sentences: the evidence that decided the verdict and the risk; name the file, line, or test>
+REASON: <one or two sentences: the evidence that decided the verdict and the risk; name the file, line, or test>
 FIX: <one to three sentences: the fix to apply, with the files it edits named>
 OPTIONS:
   A. <one sentence: the fix, then the trade-off it carries>
