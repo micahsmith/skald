@@ -1,7 +1,7 @@
 ---
 name: deep-review
 description: Runs a read-only deep review of a branch with six focuses (security and privacy, performance, logic, compatibility, design, style) and writes a consolidated report.
-argument-hint: "[target] [base] — default behavior compares `HEAD` against `main`/`master`"
+argument-hint: "[target] [base] — base defaults to the project's base branch, else `main`/`master`"
 disable-model-invocation: true
 ---
 
@@ -14,10 +14,13 @@ The arguments name the branch under review (`TARGET`) and the branch to compare 
 Accept either positional references or plain language ("review this branch against the `dev`
 branch").
 
-- No arguments: `TARGET` is the current branch. Pass no `BASE`, so that the prep script uses `main`
-  or `master`.
-- One argument: the argument is `TARGET`. Pass no `BASE`.
+- No arguments: `TARGET` is the current branch.
+- One argument: the argument is `TARGET`.
 - Two arguments: the first argument is `TARGET` and the second is `BASE`.
+
+If the user names no `BASE`, use the base branch that the project guidance in your context names,
+such as a `Base branch: dev` line in `CLAUDE.md`. If the guidance names none, pass no `BASE`, so that
+the prep script uses `main` or `master`.
 
 Pass `--no-fetch` to the prep script when the user asks to skip the fetch or is offline.
 
@@ -34,6 +37,11 @@ bash scripts/prepare-review.sh [--no-fetch] [TARGET] [BASE]
 The script prints the values that later steps use: `WORKDIR`, `MERGE_BASE`, `TARGET_SHA`,
 `DIFF_CMD`, the diffstat, the changed-file list, and `CLEANUP` when it created a worktree. If the
 script fails, report the cause to the user.
+
+The script prints `STACK_PARENTS` when `TARGET` holds the commits of another local branch that
+`BASE` lacks. If the user did not name `BASE`, stop and ask whether to review against the first
+branch in that list. If the user agrees, run the `CLEANUP` command if there is one, then run the
+script again with that branch as `BASE`.
 
 ### 2. First Pass Summary
 

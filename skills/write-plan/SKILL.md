@@ -31,8 +31,8 @@ plan, use `/brainstorm` and `/write-spec` first.
    tests are written and run. Explore until you can define slices, ordering and dependencies,
    decision anchors, and concrete test cases.
 2. **Draft Slices.** Decompose the work into tracer-bullet slices (see "Slices").
-3. **Interview & Iterate.** Present the draft. Confirm with the user before proceeding further. To
-   resolve gaps, ask one question at a time.
+3. **Interview & Iterate.** Present the draft, and name its start branch (see "Start Branch").
+   Confirm with the user before proceeding further. To resolve gaps, ask one question at a time.
 4. **Write.** Create the plan file (see "Output").
 5. **Review.** Scan the draft and fix problems inline (see "Self-Review").
 6. **Report.** Report the plan file path and a short summary of its contents.
@@ -42,11 +42,21 @@ plan, use `/brainstorm` and `/write-spec` first.
 A plan has four parts:
 
 1. **Header.** The header includes the feature name, a one-sentence statement of the goal, a link to
-   the spec (if it exists), and the slice index with ordering.
+   the spec (if it exists), the start branch as a `**Start branch:**` line, and the slice index with
+   ordering.
 2. **Execution Protocol.** The standardized block (see "Execution Protocol").
 3. **Slices.** The work broken down into tracer-bullet style chunks.
 4. **Completion Sentinel.** The last part of the plan is the completion report template (see
    "Completion Sentinel").
+
+### Start Branch
+
+The start branch is the branch the work starts from. Use the first of these that exists:
+
+1. The branch the user or the spec names. A stacked feature names its parent branch.
+2. The base branch that the project guidance in your context names, such as a `Base branch: dev`
+   line in `CLAUDE.md`.
+3. The current branch.
 
 ### Execution Protocol
 
@@ -61,7 +71,8 @@ work to a fresh subagent if possible. Prove each slice with surfaced test output
 emit the completion report.
 
 1. **Worktree.** Do all work in a git worktree (if worktrees are available) named after this plan
-   file.
+   file. Create it detached from the start branch in the header:
+   `git worktree add --detach <path> <start-branch>`.
 2. **Sequential Slices in Order.** Follow the ordering for slices. Start a slice ONLY after every
    slice that blocks it has passed verification. Independent slices MAY run in parallel ONLY if
    each runs in its own worktree. Independent worktrees MUST be merged back into the main worktree
@@ -113,6 +124,7 @@ Print this ONLY when all slice checkpoints are verified:
 
 - One line per slice: its title, ✅, and the checkpoint proof.
 - The full test suite command and its output.
+- The worktree path, if the work ran in a worktree.
 - Final line verbatim: `PLAN COMPLETE: plan-<date>.md`
 ```
 

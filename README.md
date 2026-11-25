@@ -2,10 +2,16 @@
 
 Skills and hooks library for Claude Code and other agents.
 
+The `experiment/skald-tool` branch holds `skald`, an experimental command-line program. The README
+on that branch explains how to install it.
+
 ## Installation
 
 Give the prompt below to your agent. Use the same prompt to install, update, or reinstall. Each run
 replaces any earlier copy, so every run ends in the same state.
+
+An earlier version of this README installed the skills from the `legacy-skills` branch. Updates now
+land on `main`, so run the prompt again to switch to `main`.
 
 ```text
 Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
@@ -45,6 +51,7 @@ The hooks add these guides to the context at the start of every session and ever
 | `cleanup-comments` | Delete unnecessary code comments and tighten the comments that remain. |
 | `deep-review` | Review a branch in depth and write a consolidated report. |
 | `handoff` | Compact the conversation into a handoff file. |
+| `land-worktree` | Move a worktree's uncommitted changes onto another tree, then remove the worktree. |
 | `merge-review` | Merge findings from another review into a `deep-review` report. |
 | `resolve-review` | Validate and fix the issues in a `deep-review` report. |
 | `write-adr` | Record an architecture decision as a numbered, indexed ADR. |
