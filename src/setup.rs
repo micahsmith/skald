@@ -18,7 +18,7 @@ const MARKETPLACE_ADD: [&str; 6] = [
     "plugin",
     "marketplace",
     "add",
-    "https://github.com/micahsmith/skald.git",
+    "https://github.com/micahsmith/skald.git#experiment/skald-tool",
     "--scope",
     "user",
 ];

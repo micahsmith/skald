@@ -40,7 +40,7 @@ const MIGRATIONS: &[&str] = &["
     );
 "];
 
-pub const UPGRADE: &str = "cargo install --locked --git https://github.com/micahsmith/skald skald";
+pub const UPGRADE: &str = "cargo install --locked --git https://github.com/micahsmith/skald --branch experiment/skald-tool skald";
 
 pub struct Store {
     conn: Connection,

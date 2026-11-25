@@ -11,8 +11,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const MARKETPLACE_ADD: &str =
-    "plugin marketplace add https://github.com/micahsmith/skald.git --scope user";
+const MARKETPLACE_ADD: &str = "plugin marketplace add https://github.com/micahsmith/skald.git#experiment/skald-tool --scope user";
 const PLUGIN_INSTALL: &str = "plugin install code-skillset@skald --scope user";
 
 fn settings_path(sandbox: &Sandbox) -> PathBuf {

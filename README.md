@@ -8,50 +8,30 @@ This repository holds two things:
 
 The plugin works without skald.
 
-### Legacy Skills Installation
+This README describes the `experiment/skald-tool` branch. The default branch, `main`, holds the
+legacy skills. The README on `main` explains how to install them.
 
-To install the legacy skills from the `legacy-skills` branch, give the prompt below to your agent.
+## Installation
+
+Give the prompt below to your agent to install the plugin from the `experiment/skald-tool` branch.
+Use the same prompt to install, update, or reinstall. Each run replaces any earlier copy, so every
+run ends in the same state.
+
+An earlier copy of this prompt installs the legacy skills from `main`. You SHOULD use the prompt
+below.
 
 ```text
-Install the `code-skillset` plugin from the `legacy-skills` branch of
+Install the `code-skillset` plugin from the `experiment/skald-tool` branch of
 https://github.com/micahsmith/skald. Follow these steps in order:
 
-1. Fetch the latest commit of the `legacy-skills` branch over HTTPS. Assume you do not have access
-   to SSH.
+1. Fetch the latest commit of the `experiment/skald-tool` branch over HTTPS. Assume you do not have
+   access to SSH.
 2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or
    `cc-loadout` marketplace entry. Leave everything else in place.
 3. Install at the user level, using the native install mechanism of the agent you are running in:
    - If the agent supports Claude Code plugin marketplaces, add
-     `https://github.com/micahsmith/skald.git#legacy-skills` as the `skald` marketplace. Then install
-     `code-skillset@skald`. This step also installs the hooks.
-   - Otherwise, install each directory under `skills/` as a skill. Keep each directory name and its
-     contents unchanged. Then register the hooks in `hooks/` with the agent's equivalent of a
-     session-start hook. If the agent has no equivalent, skip the hooks. Ask for confirmation before
-     editing any global instruction file.
-4. Confirm that every skill under `skills/` is installed.
-5. Report the install location, what was installed, what was skipped, and whether the agent needs to
-   be restarted.
-```
-
-## Installation
-
-Give the prompt below to your agent to install the plugin. Use the same prompt to install, update,
-or reinstall. Each run replaces any earlier copy, so every run ends in the same state.
-
-The plugin's `skills/` and `hooks/` folders moved under `plugin/`. A saved copy of an older prompt
-no longer works, so you SHOULD use the current prompt below.
-
-```text
-Install the `code-skillset` plugin from https://github.com/micahsmith/skald. Follow these steps in
-order:
-
-1. Fetch the latest commit of the default branch over HTTPS. Assume you do not have access to SSH.
-2. Remove every earlier installation of `code-skillset`, including cached copies and any `skald` or
-   `cc-loadout` marketplace entry. Leave everything else in place.
-3. Install at the user level, using the native install mechanism of the agent you are running in:
-   - If the agent supports Claude Code plugin marketplaces, add the repository as the `skald`
-     marketplace by its HTTPS URL. Then install `code-skillset@skald`. This step also installs the
-     hooks.
+     `https://github.com/micahsmith/skald.git#experiment/skald-tool` as the `skald` marketplace.
+     Then install `code-skillset@skald`. This step also installs the hooks.
    - Otherwise, install each directory under `plugin/skills/` as a skill. Keep each directory name
      and its contents unchanged. Then register the hooks in `plugin/hooks/` with the agent's
      equivalent of a session-start hook. If the agent has no equivalent, skip the hooks. Ask for
@@ -98,7 +78,7 @@ context. In every other agent, each skill runs its own copy of the script.
 Installation takes two steps. First, install the `skald` binary:
 
 ```sh
-cargo install --locked --git https://github.com/micahsmith/skald skald
+cargo install --locked --git https://github.com/micahsmith/skald --branch experiment/skald-tool skald
 ```
 
 Then run setup:
@@ -107,7 +87,8 @@ Then run setup:
 skald setup
 ```
 
-Setup installs the Claude Code session hook and the `code-skillset` plugin. Running setup again
+Setup installs the Claude Code session hook and the `code-skillset` plugin from the
+`experiment/skald-tool` branch. Running setup again
 changes nothing. Pass `--no-plugin` to skip the plugin.
 
 ### Usage
